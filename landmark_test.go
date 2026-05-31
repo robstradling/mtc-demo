@@ -5,8 +5,8 @@ import (
 )
 
 func TestLandmarkSequence(t *testing.T) {
-	baseID, _ := ParseTrustAnchorID("32473.1")
-	ls := NewLandmarkSequence(baseID, 5)
+	caID, _ := ParseTrustAnchorID("32473.1")
+	ls := NewLandmarkSequence(caID, 1, 5)
 
 	// Landmark 0 always has tree size 0.
 	ts, err := ls.TreeSize(0)
@@ -42,8 +42,8 @@ func TestLandmarkSequence(t *testing.T) {
 }
 
 func TestLandmarkSubtrees(t *testing.T) {
-	baseID, _ := ParseTrustAnchorID("32473.1")
-	ls := NewLandmarkSequence(baseID, 5)
+	caID, _ := ParseTrustAnchorID("32473.1")
+	ls := NewLandmarkSequence(caID, 1, 5)
 	ls.AllocateLandmark(100)
 	ls.AllocateLandmark(200)
 
@@ -82,8 +82,8 @@ func TestLandmarkSubtrees(t *testing.T) {
 }
 
 func TestLandmarkActiveLandmarks(t *testing.T) {
-	baseID, _ := ParseTrustAnchorID("32473.1")
-	ls := NewLandmarkSequence(baseID, 3)
+	caID, _ := ParseTrustAnchorID("32473.1")
+	ls := NewLandmarkSequence(caID, 1, 3)
 	for i := 1; i <= 5; i++ {
 		ls.AllocateLandmark(uint64(i * 100))
 	}
@@ -98,20 +98,21 @@ func TestLandmarkActiveLandmarks(t *testing.T) {
 }
 
 func TestLandmarkTrustAnchorID(t *testing.T) {
-	baseID, _ := ParseTrustAnchorID("32473.1")
-	ls := NewLandmarkSequence(baseID, 5)
+	caID, _ := ParseTrustAnchorID("32473.1")
+	ls := NewLandmarkSequence(caID, 1, 5)
 	ls.AllocateLandmark(100)
 
+	// Landmark ID = {caID landmarks(1) N L} = 32473.1.1.1.42
 	id := ls.LandmarkTrustAnchorID(42)
 	expected := id.String()
-	if expected != "32473.1.42" {
-		t.Fatalf("trust anchor ID = %q, want \"32473.1.42\"", expected)
+	if expected != "32473.1.1.1.42" {
+		t.Fatalf("trust anchor ID = %q, want \"32473.1.1.1.42\"", expected)
 	}
 }
 
 func TestLandmarkFindContaining(t *testing.T) {
-	baseID, _ := ParseTrustAnchorID("32473.1")
-	ls := NewLandmarkSequence(baseID, 10)
+	caID, _ := ParseTrustAnchorID("32473.1")
+	ls := NewLandmarkSequence(caID, 1, 10)
 	ls.AllocateLandmark(100)
 	ls.AllocateLandmark(200)
 	ls.AllocateLandmark(300)

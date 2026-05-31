@@ -7,8 +7,9 @@ import (
 func TestMTCProofRoundtrip(t *testing.T) {
 	cosignerID, _ := ParseTrustAnchorID("32473.1.1")
 	p := &MTCProof{
-		Start: 4,
-		End:   8,
+		Extensions: MarshalExtensions(nil), // empty extensions
+		Start:      4,
+		End:        8,
 		InclusionProof: []byte{
 			1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16,
 			17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32,

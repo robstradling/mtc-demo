@@ -1,5 +1,5 @@
 // Package mtc implements Merkle Tree Certificates as specified in
-// draft-ietf-plants-merkle-tree-certs-03.
+// draft-ietf-plants-merkle-tree-certs-04.
 package mtc
 
 import (
@@ -103,4 +103,32 @@ func parseBase128(in []byte) (ret uint32, rest []byte, ok bool) {
 			return
 		}
 	}
+}
+
+// OIDName returns the cosigner_name/log_origin format used in
+// CosignedMessage (Section 5.3.1): "oid/1.3.6.1.4.1." + ASCII representation.
+func (t TrustAnchorID) OIDName() string {
+	return "oid/1.3.6.1.4.1." + t.String()
+}
+
+// LogID constructs the log ID for a given CA ID and log number.
+// Log ID = {caID logs(0) N} where N is the log number (Section 5.2).
+func (t TrustAnchorID) LogID(logNumber uint16) TrustAnchorID {
+	id := make(TrustAnchorID, len(t))
+	copy(id, t)
+	id = appendBase128(id, 0)
+	id = appendBase128(id, uint32(logNumber))
+	return id
+}
+
+// LandmarkID constructs the landmark trust anchor ID for a given
+// CA ID, log number, and landmark number.
+// Landmark ID = {caID landmarks(1) N L} (Section 5.1).
+func (t TrustAnchorID) LandmarkID(logNumber uint16, landmarkNum uint32) TrustAnchorID {
+	id := make(TrustAnchorID, len(t))
+	copy(id, t)
+	id = appendBase128(id, 1)
+	id = appendBase128(id, uint32(logNumber))
+	id = appendBase128(id, landmarkNum)
+	return id
 }

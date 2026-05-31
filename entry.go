@@ -24,11 +24,46 @@ var (
 	OIDMTCProofExperimental = asn1.ObjectIdentifier{1, 3, 6, 1, 4, 1, 44363, 47, 0}
 	// OIDRDNATrustAnchorIDExperimental is the experimental OID for id-rdna-trustAnchorID.
 	OIDRDNATrustAnchorIDExperimental = asn1.ObjectIdentifier{1, 3, 6, 1, 4, 1, 44363, 47, 1}
+	// OIDMTCCertificationAuthorityExperimental is the experimental OID for id-pe-mtcCertificationAuthority.
+	OIDMTCCertificationAuthorityExperimental = asn1.ObjectIdentifier{1, 3, 6, 1, 4, 1, 44363, 47, 2}
 )
 
-// MarshalNullEntry returns the serialized form of a null_entry.
+// MerkleTreeCertEntryExtension represents a tag-length-value extension
+// associated with a log entry (Section 5.2.1).
+type MerkleTreeCertEntryExtension struct {
+	ExtensionType uint16
+	ExtensionData []byte
+}
+
+// MarshalExtensions serializes a list of extensions using the TLS
+// presentation language as extensions<0..2^16-1>.
+func MarshalExtensions(exts []MerkleTreeCertEntryExtension) []byte {
+	var inner []byte
+	for _, ext := range exts {
+		inner = append(inner, byte(ext.ExtensionType>>8), byte(ext.ExtensionType))
+		inner = append(inner, byte(len(ext.ExtensionData)>>8), byte(len(ext.ExtensionData)))
+		inner = append(inner, ext.ExtensionData...)
+	}
+	// Prefix with 2-byte length.
+	result := make([]byte, 2, 2+len(inner))
+	result[0] = byte(len(inner) >> 8)
+	result[1] = byte(len(inner))
+	result = append(result, inner...)
+	return result
+}
+
+// MarshalNullEntry returns the serialized form of a null_entry with
+// empty extensions.
 func MarshalNullEntry() []byte {
-	return []byte{byte(EntryTypeNull >> 8), byte(EntryTypeNull)}
+	return MarshalNullEntryWithExtensions(nil)
+}
+
+// MarshalNullEntryWithExtensions returns the serialized form of a
+// null_entry with the given extensions.
+func MarshalNullEntryWithExtensions(exts []MerkleTreeCertEntryExtension) []byte {
+	b := MarshalExtensions(exts)
+	b = append(b, byte(EntryTypeNull>>8), byte(EntryTypeNull))
+	return b
 }
 
 // MarshalTBSCertEntry marshals a tbs_cert_entry from the DER-encoded
@@ -36,9 +71,14 @@ func MarshalNullEntry() []byte {
 // be the concatenation of the DER encodings of each field (i.e., the
 // contents octets of the SEQUENCE, excluding the SEQUENCE tag and length).
 func MarshalTBSCertEntry(tbsCertLogEntryContents []byte) []byte {
-	b := make([]byte, 2, 2+len(tbsCertLogEntryContents))
-	b[0] = byte(EntryTypeTBSCert >> 8)
-	b[1] = byte(EntryTypeTBSCert)
+	return MarshalTBSCertEntryWithExtensions(nil, tbsCertLogEntryContents)
+}
+
+// MarshalTBSCertEntryWithExtensions marshals a tbs_cert_entry with the
+// given extensions.
+func MarshalTBSCertEntryWithExtensions(exts []MerkleTreeCertEntryExtension, tbsCertLogEntryContents []byte) []byte {
+	b := MarshalExtensions(exts)
+	b = append(b, byte(EntryTypeTBSCert>>8), byte(EntryTypeTBSCert))
 	b = append(b, tbsCertLogEntryContents...)
 	return b
 }

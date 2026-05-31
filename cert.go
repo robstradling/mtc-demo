@@ -1,9 +1,10 @@
 package mtc
 
 import (
-	"encoding/binary"
+	"bytes"
 	"errors"
 	"fmt"
+	"sort"
 
 	"golang.org/x/crypto/cryptobyte"
 	cbasn1 "golang.org/x/crypto/cryptobyte/asn1"
@@ -12,20 +13,46 @@ import (
 // MTCProof is the proof structure embedded in the signatureValue of a
 // Merkle Tree Certificate, as defined in Section 6.1.
 type MTCProof struct {
+	Extensions     []byte // raw serialized extensions<0..2^16-1>
 	Start          uint64
 	End            uint64
 	InclusionProof []byte
 	Signatures     []MTCSignature
 }
 
+// addUint48 appends a big-endian 48-bit integer to the builder.
+func addUint48(b *cryptobyte.Builder, v uint64) {
+	b.AddBytes([]byte{
+		byte(v >> 40), byte(v >> 32), byte(v >> 24),
+		byte(v >> 16), byte(v >> 8), byte(v),
+	})
+}
+
+// readUint48 reads a big-endian 48-bit integer from a byte slice.
+func readUint48(data []byte) uint64 {
+	return uint64(data[0])<<40 | uint64(data[1])<<32 | uint64(data[2])<<24 |
+		uint64(data[3])<<16 | uint64(data[4])<<8 | uint64(data[5])
+}
+
 // Marshal serializes an MTCProof using the TLS presentation language.
+// Cosigner IDs must be unique and ordered (shorter before longer,
+// then lexicographic).
 func (p *MTCProof) Marshal() ([]byte, error) {
 	b := cryptobyte.NewBuilder(nil)
-	b.AddUint64(p.Start)
-	b.AddUint64(p.End)
+	// extensions<0..2^16-1>
+	if p.Extensions != nil {
+		b.AddBytes(p.Extensions)
+	} else {
+		b.AddUint16(0) // empty extensions
+	}
+	// uint48 start, uint48 end
+	addUint48(b, p.Start)
+	addUint48(b, p.End)
+	// inclusion_proof<0..2^16-1>
 	b.AddUint16LengthPrefixed(func(child *cryptobyte.Builder) {
 		child.AddBytes(p.InclusionProof)
 	})
+	// signatures<0..2^16-1>
 	b.AddUint16LengthPrefixed(func(sigs *cryptobyte.Builder) {
 		for _, sig := range p.Signatures {
 			sigs.AddUint8LengthPrefixed(func(child *cryptobyte.Builder) {
@@ -41,25 +68,46 @@ func (p *MTCProof) Marshal() ([]byte, error) {
 
 // UnmarshalMTCProof parses an MTCProof from its TLS serialization.
 func UnmarshalMTCProof(data []byte) (*MTCProof, error) {
-	if len(data) < 16 {
-		return nil, errors.New("MTCProof too short")
-	}
-	p := &MTCProof{
-		Start: binary.BigEndian.Uint64(data[0:8]),
-		End:   binary.BigEndian.Uint64(data[8:16]),
-	}
-	s := cryptobyte.String(data[16:])
+	s := cryptobyte.String(data)
+	p := &MTCProof{}
 
+	// Read extensions<0..2^16-1>
+	var extensions cryptobyte.String
+	if !s.ReadUint16LengthPrefixed(&extensions) {
+		return nil, errors.New("could not read extensions")
+	}
+	if len(extensions) > 0 {
+		// Store with the length prefix for round-tripping.
+		p.Extensions = make([]byte, 2+len(extensions))
+		p.Extensions[0] = byte(len(extensions) >> 8)
+		p.Extensions[1] = byte(len(extensions))
+		copy(p.Extensions[2:], extensions)
+	} else {
+		p.Extensions = []byte{0, 0}
+	}
+
+	// Read uint48 start, uint48 end
+	if len(s) < 12 {
+		return nil, errors.New("MTCProof too short for start/end")
+	}
+	p.Start = readUint48([]byte(s[:6]))
+	s = s[6:]
+	p.End = readUint48([]byte(s[:6]))
+	s = s[6:]
+
+	// inclusion_proof<0..2^16-1>
 	var inclusionProof cryptobyte.String
 	if !s.ReadUint16LengthPrefixed(&inclusionProof) {
 		return nil, errors.New("could not read inclusion_proof")
 	}
 	p.InclusionProof = []byte(inclusionProof)
 
+	// signatures<0..2^16-1>
 	var signatures cryptobyte.String
 	if !s.ReadUint16LengthPrefixed(&signatures) {
 		return nil, errors.New("could not read signatures")
 	}
+	var prevID TrustAnchorID
 	for !signatures.Empty() {
 		var sig MTCSignature
 		var cosignerID cryptobyte.String
@@ -67,6 +115,13 @@ func UnmarshalMTCProof(data []byte) (*MTCProof, error) {
 			return nil, errors.New("could not read cosigner_id")
 		}
 		sig.CosignerID = TrustAnchorID(cosignerID)
+		// Enforce ordering: shorter before longer, then lexicographic.
+		if prevID != nil {
+			if compareCosignerIDs(prevID, sig.CosignerID) >= 0 {
+				return nil, errors.New("cosigner_id values not in canonical order")
+			}
+		}
+		prevID = sig.CosignerID
 		var sigBytes cryptobyte.String
 		if !signatures.ReadUint16LengthPrefixed(&sigBytes) {
 			return nil, errors.New("could not read signature")
@@ -77,19 +132,37 @@ func UnmarshalMTCProof(data []byte) (*MTCProof, error) {
 	return p, nil
 }
 
+// compareCosignerIDs compares two cosigner IDs for canonical ordering:
+// shorter before longer, then lexicographic.
+func compareCosignerIDs(a, b TrustAnchorID) int {
+	if len(a) != len(b) {
+		return len(a) - len(b)
+	}
+	return bytes.Compare(a, b)
+}
+
+// sortSignatures sorts MTCSignature slices by cosigner_id in canonical order.
+func sortSignatures(sigs []MTCSignature) {
+	sort.Slice(sigs, func(i, j int) bool {
+		return compareCosignerIDs(sigs[i].CosignerID, sigs[j].CosignerID) < 0
+	})
+}
+
 // CreateCertificate constructs an X.509 certificate containing an MTCProof
 // in the signatureValue field, as defined in Section 6.1.
 //
 // Parameters:
 //   - mt: the issuance log Merkle tree
-//   - issuer: the log's trust anchor ID
-//   - index: the entry's index in the log (used as serialNumber)
-//   - tbsCertFields: the DER-encoded TBSCertificate body (version through extensions),
-//     constructed to match the TBSCertificateLogEntry
+//   - issuer: the CA's trust anchor ID (used in the issuer DN)
+//   - logID: the issuance log's trust anchor ID (used for cosigning)
+//   - logNumber: the log number (1-65535)
+//   - index: the entry's zero-based index in the log
+//   - tbsCertFields: callback to write validity, subject, extensions into the TBSCertificate
 //   - spki: the DER-encoded SubjectPublicKeyInfo
 //   - start, end: the subtree for the proof
-//   - cosigners: cosigner keys to produce cosignatures
-func CreateCertificate(mt *MerkleTree, issuer TrustAnchorID, index int, tbsCertFields func(b *cryptobyte.Builder), spki []byte, start, end int, cosignerKeys []*CosignerKey) ([]byte, error) {
+//   - extensions: serialized MerkleTreeCertEntryExtension extensions (or nil)
+//   - cosignerKeys: cosigner keys to produce cosignatures
+func CreateCertificate(mt *MerkleTree, issuer TrustAnchorID, logID TrustAnchorID, logNumber uint16, index int, tbsCertFields func(b *cryptobyte.Builder), spki []byte, start, end int, extensions []byte, cosignerKeys []*CosignerKey) ([]byte, error) {
 	// Build inclusion proof
 	proof, err := mt.SubtreeInclusionProof(index, start, end)
 	if err != nil {
@@ -105,7 +178,7 @@ func CreateCertificate(mt *MerkleTree, issuer TrustAnchorID, index int, tbsCertF
 	// Generate cosignatures
 	var sigs []MTCSignature
 	for _, ck := range cosignerKeys {
-		sig, err := Cosign(ck, issuer, uint64(start), uint64(end), &subtreeHash)
+		sig, err := Cosign(ck, logID, uint64(start), uint64(end), &subtreeHash)
 		if err != nil {
 			return nil, fmt.Errorf("cosigning: %w", err)
 		}
@@ -115,8 +188,15 @@ func CreateCertificate(mt *MerkleTree, issuer TrustAnchorID, index int, tbsCertF
 		})
 	}
 
+	// Sort signatures by cosigner_id in canonical order.
+	sortSignatures(sigs)
+
+	// Compute serial number: (log_number << 48) | index
+	serial := (int64(logNumber) << 48) | int64(index)
+
 	// Build MTCProof
 	mtcProof := &MTCProof{
+		Extensions:     extensions,
 		Start:          uint64(start),
 		End:            uint64(end),
 		InclusionProof: proof,
@@ -136,8 +216,8 @@ func CreateCertificate(mt *MerkleTree, issuer TrustAnchorID, index int, tbsCertF
 			tbs.AddASN1(cbasn1.Tag(0).Constructed().ContextSpecific(), func(v *cryptobyte.Builder) {
 				v.AddASN1Int64(2)
 			})
-			// serialNumber = index
-			tbs.AddASN1Int64(int64(index))
+			// serialNumber = (log_number << 48) | index
+			tbs.AddASN1Int64(serial)
 			// signature = id-alg-mtcProof
 			addMTCProofAlg(tbs)
 			// issuer

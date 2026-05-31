@@ -19,9 +19,10 @@ type TrustedCosigner struct {
 // TrustedSubtree represents a predistributed trusted subtree hash
 // for landmark-relative certificate verification (Section 7.4).
 type TrustedSubtree struct {
-	Start uint64
-	End   uint64
-	Hash  HashValue
+	LogNumber uint16
+	Start     uint64
+	End       uint64
+	Hash      HashValue
 }
 
 // CosignerPolicy defines the relying party's requirements for which
@@ -51,13 +52,19 @@ func (p *AnyNCosignerPolicy) IsSatisfied(cosignerIDs []TrustAnchorID) bool {
 	return count >= p.N
 }
 
-// RevokedRanges holds ranges of revoked indices (Section 7.5).
-type RevokedRanges []Interval
+// RevokedRanges holds ranges of revoked serial numbers (Section 7.5).
+// Serial numbers encode both log number and index: (log_number << 48) | index.
+type RevokedRanges []SerialRange
 
-// IsRevoked checks whether the given index falls within a revoked range.
-func (rr RevokedRanges) IsRevoked(index int) bool {
+// SerialRange represents a half-open range of serial numbers [Start, End).
+type SerialRange struct {
+	Start, End int64
+}
+
+// IsRevoked checks whether the given serial number falls within a revoked range.
+func (rr RevokedRanges) IsRevoked(serial int64) bool {
 	for _, r := range rr {
-		if index >= r.Start && index < r.End {
+		if serial >= r.Start && serial < r.End {
 			return true
 		}
 	}
@@ -67,7 +74,7 @@ func (rr RevokedRanges) IsRevoked(index int) bool {
 // VerifierConfig holds the relying party's configuration for
 // verifying Merkle Tree Certificates (Section 7.1).
 type VerifierConfig struct {
-	LogID           TrustAnchorID
+	CAID            TrustAnchorID
 	Cosigners       []TrustedCosigner
 	Policy          CosignerPolicy
 	TrustedSubtrees []TrustedSubtree
@@ -105,14 +112,12 @@ func VerifyCertificateSignature(certDER []byte, cfg *VerifierConfig) error {
 	if !cert.ReadASN1(&sigAlg, cbasn1.SEQUENCE) {
 		return errors.New("invalid certificate: could not read signatureAlgorithm")
 	}
-	// Verify it is id-alg-mtcProof with no parameters.
 
 	// Read signatureValue.
 	var sigValue cryptobyte.String
 	if !cert.ReadASN1(&sigValue, cbasn1.BIT_STRING) {
 		return errors.New("invalid certificate: could not read signatureValue")
 	}
-	// Skip the unused bits byte.
 	if len(sigValue) < 1 {
 		return errors.New("invalid signatureValue")
 	}
@@ -131,34 +136,56 @@ func VerifyCertificateSignature(certDER []byte, cfg *VerifierConfig) error {
 		return errors.New("could not read version")
 	}
 
-	// serialNumber = index
+	// Step 3: Read serial number.
 	var serialNumber int
 	if !tbsSeq.ReadASN1Integer(&serialNumber) {
 		return errors.New("could not read serialNumber")
 	}
-	index := serialNumber
-
-	// Step 3: Check revocation.
-	if cfg.RevokedRanges.IsRevoked(index) {
-		return fmt.Errorf("index %d is revoked", index)
+	serial := int64(serialNumber)
+	if serial < 0 {
+		return errors.New("negative serial number")
 	}
 
-	// Parse MTCProof from signatureValue.
+	// Step 4: Check revocation.
+	if cfg.RevokedRanges.IsRevoked(serial) {
+		return fmt.Errorf("serial %d is revoked", serial)
+	}
+
+	// Step 5: Extract index and log_number from serial.
+	index := int(serial & 0xFFFFFFFFFFFF)
+	logNumber := uint16(serial >> 48)
+	if logNumber == 0 {
+		return errors.New("log_number is zero")
+	}
+
+	// Step 6: Construct log_id from CA ID and log_number.
+	logID := cfg.CAID.LogID(logNumber)
+
+	// Parse MTCProof from signatureValue (Step 2).
 	mtcProof, err := UnmarshalMTCProof(proofData)
 	if err != nil {
 		return fmt.Errorf("parsing MTCProof: %w", err)
 	}
 
-	// Step 5: Compute entry hash using single-pass approach.
-	// We construct the MerkleTreeCertEntry from the TBSCertificate.
+	// Step 8: Construct MerkleTreeCertEntry with extensions from MTCProof.
 	entryContents, err := BuildTBSCertificateLogEntry(tbsBytes)
 	if err != nil {
 		return fmt.Errorf("building TBSCertificateLogEntry: %w", err)
 	}
-	entry := MarshalTBSCertEntry(entryContents)
+	// Build entry: extensions + type + tbs_cert_entry_data
+	var entry []byte
+	if mtcProof.Extensions != nil {
+		entry = append(entry, mtcProof.Extensions...)
+	} else {
+		entry = append(entry, 0, 0) // empty extensions
+	}
+	entry = append(entry, byte(EntryTypeTBSCert>>8), byte(EntryTypeTBSCert))
+	entry = append(entry, entryContents...)
+
+	// Step 9: Compute entry hash.
 	entryHash := HashEntry(entry)
 
-	// Step 6: Evaluate inclusion proof.
+	// Step 10: Evaluate inclusion proof.
 	expectedSubtreeHash, err := EvaluateSubtreeInclusionProof(
 		mtcProof.InclusionProof, index, entryHash,
 		int(mtcProof.Start), int(mtcProof.End),
@@ -167,9 +194,9 @@ func VerifyCertificateSignature(certDER []byte, cfg *VerifierConfig) error {
 		return fmt.Errorf("evaluating inclusion proof: %w", err)
 	}
 
-	// Step 7: Check trusted subtrees (for landmark-relative certificates).
+	// Step 11: Check trusted subtrees (for landmark-relative certificates).
 	for _, ts := range cfg.TrustedSubtrees {
-		if ts.Start == mtcProof.Start && ts.End == mtcProof.End {
+		if ts.LogNumber == logNumber && ts.Start == mtcProof.Start && ts.End == mtcProof.End {
 			if expectedSubtreeHash == ts.Hash {
 				return nil
 			}
@@ -177,7 +204,7 @@ func VerifyCertificateSignature(certDER []byte, cfg *VerifierConfig) error {
 		}
 	}
 
-	// Step 8: Check cosignatures.
+	// Step 12: Check cosignatures.
 	var validCosignerIDs []TrustAnchorID
 	for _, sig := range mtcProof.Signatures {
 		for _, tc := range cfg.Cosigners {
@@ -186,7 +213,7 @@ func VerifyCertificateSignature(certDER []byte, cfg *VerifierConfig) error {
 			}
 			err := VerifyCosignature(
 				tc.CosignerID, tc.PublicKey, tc.SignatureAlgorithm,
-				cfg.LogID,
+				logID,
 				mtcProof.Start, mtcProof.End,
 				&expectedSubtreeHash,
 				sig.Signature,

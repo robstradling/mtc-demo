@@ -9,8 +9,10 @@ import (
 // in Section 6.3.1. Landmarks are agreed-upon tree sizes for
 // optimizing certificates.
 type LandmarkSequence struct {
-	// BaseID is the OID arc for trust anchor IDs of individual landmarks.
-	BaseID TrustAnchorID
+	// CAID is the CA's trust anchor ID.
+	CAID TrustAnchorID
+	// LogNumber is the log number for this landmark sequence.
+	LogNumber uint16
 	// MaxActiveLandmarks is the maximum number of landmarks that may
 	// contain unexpired certificates at any time.
 	MaxActiveLandmarks int
@@ -20,11 +22,12 @@ type LandmarkSequence struct {
 }
 
 // NewLandmarkSequence creates a new landmark sequence with the given
-// base ID and maximum number of active landmarks. Landmark zero is
-// automatically created with tree size 0.
-func NewLandmarkSequence(baseID TrustAnchorID, maxActive int) *LandmarkSequence {
+// CA ID, log number, and maximum number of active landmarks. Landmark
+// zero is automatically created with tree size 0.
+func NewLandmarkSequence(caID TrustAnchorID, logNumber uint16, maxActive int) *LandmarkSequence {
 	return &LandmarkSequence{
-		BaseID:             baseID,
+		CAID:               caID,
+		LogNumber:          logNumber,
 		MaxActiveLandmarks: maxActive,
 		landmarks:          []uint64{0},
 	}
@@ -87,9 +90,10 @@ func (ls *LandmarkSequence) LandmarkSubtrees(landmarkNum int) (left, right Inter
 }
 
 // LandmarkTrustAnchorID returns the trust anchor ID for the given
-// landmark number, formed by appending the number to the base ID.
+// landmark number: {caID landmarks(1) N L} where N is the log number
+// and L is the landmark number (Section 5.1).
 func (ls *LandmarkSequence) LandmarkTrustAnchorID(landmarkNum int) TrustAnchorID {
-	return append(TrustAnchorID(nil), append(ls.BaseID, appendBase128(nil, uint32(landmarkNum))...)...)
+	return ls.CAID.LandmarkID(ls.LogNumber, uint32(landmarkNum))
 }
 
 // FindContainingLandmark finds the first landmark whose subtrees

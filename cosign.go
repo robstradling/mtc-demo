@@ -23,14 +23,6 @@ const (
 	SignatureEd25519
 )
 
-// MTCSubtree represents a subtree descriptor used in cosignatures.
-type MTCSubtree struct {
-	LogID TrustAnchorID
-	Start uint64
-	End   uint64
-	Hash  HashValue
-}
-
 // MTCSignature represents a cosignature with cosigner identity.
 type MTCSignature struct {
 	CosignerID TrustAnchorID
@@ -44,23 +36,27 @@ type CosignerKey struct {
 	PrivateKey         crypto.Signer
 }
 
-// marshalSubtreeSignatureInput marshals an MTCSubtreeSignatureInput
-// as defined in Section 5.4.1.
-func marshalSubtreeSignatureInput(cosignerID TrustAnchorID, subtree MTCSubtree) ([]byte, error) {
+// marshalCosignedMessage marshals a CosignedMessage as defined in
+// Section 5.3.1. The timestamp field is set to zero for certificate use.
+func marshalCosignedMessage(cosignerID TrustAnchorID, logID TrustAnchorID, start, end uint64, subtreeHash *HashValue) ([]byte, error) {
 	b := cryptobyte.NewBuilder(nil)
-	// label: "mtc-subtree/v1\n\0" (16 bytes)
-	b.AddBytes([]byte("mtc-subtree/v1\n\x00"))
-	// cosigner_id: TrustAnchorID<1..2^8-1>
+	// label: "subtree/v1\n\0" (12 bytes)
+	b.AddBytes([]byte("subtree/v1\n\x00"))
+	// cosigner_name<1..2^8-1>
+	cosignerName := []byte(cosignerID.OIDName())
 	b.AddUint8LengthPrefixed(func(child *cryptobyte.Builder) {
-		child.AddBytes(cosignerID)
+		child.AddBytes(cosignerName)
 	})
-	// log_id
+	// timestamp: uint64 (zero for certificate use)
+	b.AddUint64(0)
+	// log_origin<1..2^8-1>
+	logOrigin := []byte(logID.OIDName())
 	b.AddUint8LengthPrefixed(func(child *cryptobyte.Builder) {
-		child.AddBytes(subtree.LogID)
+		child.AddBytes(logOrigin)
 	})
-	b.AddUint64(subtree.Start)
-	b.AddUint64(subtree.End)
-	b.AddBytes(subtree.Hash[:])
+	b.AddUint64(start)
+	b.AddUint64(end)
+	b.AddBytes(subtreeHash[:])
 	return b.Bytes()
 }
 
@@ -69,13 +65,7 @@ func Cosign(key *CosignerKey, logID TrustAnchorID, start, end uint64, hash *Hash
 	if !IsValidSubtree(int(start), int(end)) {
 		return nil, fmt.Errorf("invalid subtree [%d, %d)", start, end)
 	}
-	subtree := MTCSubtree{
-		LogID: logID,
-		Start: start,
-		End:   end,
-		Hash:  *hash,
-	}
-	input, err := marshalSubtreeSignatureInput(key.CosignerID, subtree)
+	input, err := marshalCosignedMessage(key.CosignerID, logID, start, end, hash)
 	if err != nil {
 		return nil, err
 	}
@@ -103,13 +93,7 @@ func Cosign(key *CosignerKey, logID TrustAnchorID, start, end uint64, hash *Hash
 
 // VerifyCosignature verifies a cosignature over a subtree.
 func VerifyCosignature(cosignerID TrustAnchorID, publicKey crypto.PublicKey, sigAlg SignatureAlgorithm, logID TrustAnchorID, start, end uint64, hash *HashValue, signature []byte) error {
-	subtree := MTCSubtree{
-		LogID: logID,
-		Start: start,
-		End:   end,
-		Hash:  *hash,
-	}
-	input, err := marshalSubtreeSignatureInput(cosignerID, subtree)
+	input, err := marshalCosignedMessage(cosignerID, logID, start, end, hash)
 	if err != nil {
 		return err
 	}

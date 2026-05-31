@@ -4,25 +4,41 @@ import (
 	"fmt"
 )
 
-// IssuanceLog represents a CA's issuance log (Section 5).
-// It wraps a MerkleTree and manages entries.
+// IssuanceLog represents a CA's issuance log (Section 5.2).
+// A CA operates a series of issuance logs, each identified by a
+// positive integer log number.
 type IssuanceLog struct {
-	logID    TrustAnchorID
-	entries  [][]byte // serialized MerkleTreeCertEntry values
-	tree     *MerkleTree
-	minIndex int // minimum available index (for pruning)
+	caID      TrustAnchorID
+	logNumber uint16
+	logID     TrustAnchorID
+	entries   [][]byte // serialized MerkleTreeCertEntry values
+	tree      *MerkleTree
+	minIndex  int // minimum available index (for pruning)
 }
 
-// NewIssuanceLog creates a new issuance log with the given log ID.
+// NewIssuanceLog creates a new issuance log with the given CA ID and
+// log number. Log numbers are positive integers (1-65535).
 // It initializes the log with a null_entry at index 0 as required
-// by Section 5.3.
-func NewIssuanceLog(logID TrustAnchorID) *IssuanceLog {
+// by Section 5.2.1.
+func NewIssuanceLog(caID TrustAnchorID, logNumber uint16) *IssuanceLog {
 	nullEntry := MarshalNullEntry()
 	return &IssuanceLog{
-		logID:   logID,
-		entries: [][]byte{nullEntry},
-		tree:    NewMerkleTree([][]byte{nullEntry}),
+		caID:      caID,
+		logNumber: logNumber,
+		logID:     caID.LogID(logNumber),
+		entries:   [][]byte{nullEntry},
+		tree:      NewMerkleTree([][]byte{nullEntry}),
 	}
+}
+
+// CAID returns the CA's trust anchor ID.
+func (l *IssuanceLog) CAID() TrustAnchorID {
+	return l.caID
+}
+
+// LogNumber returns the log number.
+func (l *IssuanceLog) LogNumber() uint16 {
+	return l.logNumber
 }
 
 // LogID returns the log's trust anchor ID.

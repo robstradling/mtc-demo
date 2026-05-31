@@ -14,8 +14,8 @@ func TestCosignAndVerify(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	cosignerID, _ := ParseTrustAnchorID("32473.1.1")
-	logID, _ := ParseTrustAnchorID("32473.1")
+	cosignerID, _ := ParseTrustAnchorID("32473.1")
+	logID, _ := ParseTrustAnchorID("32473.1.0.1")
 
 	ck := &CosignerKey{
 		CosignerID:         cosignerID,

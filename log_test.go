@@ -5,8 +5,8 @@ import (
 )
 
 func TestIssuanceLog(t *testing.T) {
-	logID, _ := ParseTrustAnchorID("32473.1")
-	log := NewIssuanceLog(logID)
+	caID, _ := ParseTrustAnchorID("32473.1")
+	log := NewIssuanceLog(caID, 1)
 
 	// Should start with 1 entry (null entry at index 0).
 	if log.Size() != 1 {
@@ -41,8 +41,8 @@ func TestIssuanceLog(t *testing.T) {
 }
 
 func TestIssuanceLogProofs(t *testing.T) {
-	logID, _ := ParseTrustAnchorID("32473.1")
-	log := NewIssuanceLog(logID)
+	caID, _ := ParseTrustAnchorID("32473.1")
+	log := NewIssuanceLog(caID, 1)
 	for i := 0; i < 12; i++ {
 		log.AddEntry(MarshalTBSCertEntry([]byte{byte(i)}))
 	}
@@ -63,8 +63,8 @@ func TestIssuanceLogProofs(t *testing.T) {
 }
 
 func TestIssuanceLogPruning(t *testing.T) {
-	logID, _ := ParseTrustAnchorID("32473.1")
-	log := NewIssuanceLog(logID)
+	caID, _ := ParseTrustAnchorID("32473.1")
+	log := NewIssuanceLog(caID, 1)
 	for i := 0; i < 10; i++ {
 		log.AddEntry(MarshalTBSCertEntry([]byte{byte(i)}))
 	}
@@ -97,8 +97,8 @@ func TestIssuanceLogPruning(t *testing.T) {
 }
 
 func TestIssuanceLogCoveringSubtrees(t *testing.T) {
-	logID, _ := ParseTrustAnchorID("32473.1")
-	log := NewIssuanceLog(logID)
+	caID, _ := ParseTrustAnchorID("32473.1")
+	log := NewIssuanceLog(caID, 1)
 	for i := 0; i < 12; i++ {
 		log.AddEntry(MarshalTBSCertEntry([]byte{byte(i)}))
 	}
