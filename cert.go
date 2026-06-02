@@ -77,6 +77,29 @@ func UnmarshalMTCProof(data []byte) (*MTCProof, error) {
 	if !s.ReadUint16LengthPrefixed(&extensions) {
 		return nil, errors.New("could not read extensions")
 	}
+	// Validate extension ordering: ascending by extension_type, no duplicates (§5.2.1).
+	{
+		check := cryptobyte.String(extensions)
+		var prevType uint16
+		first := true
+		for !check.Empty() {
+			var extType uint16
+			if !check.ReadUint16(&extType) {
+				return nil, errors.New("could not read extension_type")
+			}
+			if !first {
+				if extType <= prevType {
+					return nil, fmt.Errorf("extensions not in ascending order or duplicate type %d", extType)
+				}
+			}
+			first = false
+			prevType = extType
+			var extData cryptobyte.String
+			if !check.ReadUint16LengthPrefixed(&extData) {
+				return nil, errors.New("could not read extension_data")
+			}
+		}
+	}
 	if len(extensions) > 0 {
 		// Store with the length prefix for round-tripping.
 		p.Extensions = make([]byte, 2+len(extensions))
