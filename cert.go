@@ -124,6 +124,9 @@ func UnmarshalMTCProof(data []byte) (*MTCProof, error) {
 	if !s.ReadUint16LengthPrefixed(&inclusionProof) {
 		return nil, errors.New("could not read inclusion_proof")
 	}
+	if len(inclusionProof)%HashSize != 0 {
+		return nil, fmt.Errorf("inclusion_proof length %d is not a multiple of %d", len(inclusionProof), HashSize)
+	}
 	p.InclusionProof = []byte(inclusionProof)
 
 	// signatures<0..2^16-1>
