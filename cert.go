@@ -130,6 +130,12 @@ func UnmarshalMTCProof(data []byte) (*MTCProof, error) {
 		sig.Signature = []byte(sigBytes)
 		p.Signatures = append(p.Signatures, sig)
 	}
+
+	// Reject trailing bytes after the signatures vector.
+	if !s.Empty() {
+		return nil, fmt.Errorf("MTCProof has %d trailing bytes", len(s))
+	}
+
 	return p, nil
 }
 
