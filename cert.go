@@ -139,6 +139,9 @@ func UnmarshalMTCProof(data []byte) (*MTCProof, error) {
 			return nil, errors.New("could not read cosigner_id")
 		}
 		sig.CosignerID = TrustAnchorID(cosignerID)
+		if len(sig.CosignerID) == 0 {
+			return nil, errors.New("empty cosigner_id")
+		}
 		// Enforce ordering: shorter before longer, then lexicographic.
 		if prevID != nil {
 			if compareCosignerIDs(prevID, sig.CosignerID) >= 0 {
