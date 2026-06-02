@@ -4,6 +4,7 @@ import (
 	"crypto"
 	"errors"
 	"fmt"
+	"math/big"
 
 	"golang.org/x/crypto/cryptobyte"
 	cbasn1 "golang.org/x/crypto/cryptobyte/asn1"
@@ -58,11 +59,11 @@ type RevokedRanges []SerialRange
 
 // SerialRange represents a half-open range of serial numbers [Start, End).
 type SerialRange struct {
-	Start, End int64
+	Start, End uint64
 }
 
 // IsRevoked checks whether the given serial number falls within a revoked range.
-func (rr RevokedRanges) IsRevoked(serial int64) bool {
+func (rr RevokedRanges) IsRevoked(serial uint64) bool {
 	for _, r := range rr {
 		if serial >= r.Start && serial < r.End {
 			return true
@@ -137,14 +138,19 @@ func VerifyCertificateSignature(certDER []byte, cfg *VerifierConfig) error {
 	}
 
 	// Step 3: Read serial number.
-	var serialNumber int
-	if !tbsSeq.ReadASN1Integer(&serialNumber) {
+	// Use big.Int to handle serials up to 2^64-1 (the spec allows
+	// values that overflow int64 when logNumber >= 32768).
+	var serialBig big.Int
+	if !tbsSeq.ReadASN1Integer(&serialBig) {
 		return errors.New("could not read serialNumber")
 	}
-	serial := int64(serialNumber)
-	if serial < 0 {
+	if serialBig.Sign() < 0 {
 		return errors.New("negative serial number")
 	}
+	if !serialBig.IsUint64() {
+		return errors.New("serial number exceeds 2^64-1")
+	}
+	serial := serialBig.Uint64()
 
 	// Step 4: Check revocation.
 	if cfg.RevokedRanges.IsRevoked(serial) {

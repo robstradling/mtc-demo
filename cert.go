@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"math/big"
 	"sort"
 
 	"golang.org/x/crypto/cryptobyte"
@@ -192,7 +193,7 @@ func CreateCertificate(mt *MerkleTree, issuer TrustAnchorID, logID TrustAnchorID
 	sortSignatures(sigs)
 
 	// Compute serial number: (log_number << 48) | index
-	serial := (int64(logNumber) << 48) | int64(index)
+	serial := (uint64(logNumber) << 48) | uint64(index)
 
 	// Build MTCProof
 	mtcProof := &MTCProof{
@@ -217,7 +218,7 @@ func CreateCertificate(mt *MerkleTree, issuer TrustAnchorID, logID TrustAnchorID
 				v.AddASN1Int64(2)
 			})
 			// serialNumber = (log_number << 48) | index
-			tbs.AddASN1Int64(serial)
+			tbs.AddASN1BigInt(new(big.Int).SetUint64(serial))
 			// signature = id-alg-mtcProof
 			addMTCProofAlg(tbs)
 			// issuer
