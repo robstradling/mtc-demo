@@ -18,11 +18,11 @@ type TrustAnchorID []byte
 func ParseTrustAnchorID(s string) (TrustAnchorID, error) {
 	var t TrustAnchorID
 	for _, part := range strings.Split(s, ".") {
-		v, err := strconv.ParseUint(part, 10, 32)
+		v, err := strconv.ParseUint(part, 10, 64)
 		if err != nil {
 			return nil, fmt.Errorf("invalid trust anchor ID component %q: %w", part, err)
 		}
-		t = appendBase128(t, uint32(v))
+		t = appendBase128(t, v)
 	}
 	if len(t) == 0 {
 		return nil, fmt.Errorf("empty trust anchor ID")
@@ -64,7 +64,7 @@ func (t TrustAnchorID) Equal(other TrustAnchorID) bool {
 	return true
 }
 
-func appendBase128(dst []byte, v uint32) []byte {
+func appendBase128(dst []byte, v uint64) []byte {
 	var l int
 	for n := v; n != 0; n >>= 7 {
 		l++
@@ -82,7 +82,7 @@ func appendBase128(dst []byte, v uint32) []byte {
 	return dst
 }
 
-func parseBase128(in []byte) (ret uint32, rest []byte, ok bool) {
+func parseBase128(in []byte) (ret uint64, rest []byte, ok bool) {
 	rest = in
 	if len(rest) == 0 {
 		return
@@ -96,7 +96,7 @@ func parseBase128(in []byte) (ret uint32, rest []byte, ok bool) {
 		}
 		b := rest[0]
 		ret <<= 7
-		ret |= uint32(b & 0x7f)
+		ret |= uint64(b & 0x7f)
 		rest = rest[1:]
 		if b&0x80 == 0 {
 			ok = true
@@ -117,7 +117,7 @@ func (t TrustAnchorID) LogID(logNumber uint16) TrustAnchorID {
 	id := make(TrustAnchorID, len(t))
 	copy(id, t)
 	id = appendBase128(id, 0)
-	id = appendBase128(id, uint32(logNumber))
+	id = appendBase128(id, uint64(logNumber))
 	return id
 }
 
@@ -128,7 +128,7 @@ func (t TrustAnchorID) LandmarkID(logNumber uint16, landmarkNum uint32) TrustAnc
 	id := make(TrustAnchorID, len(t))
 	copy(id, t)
 	id = appendBase128(id, 1)
-	id = appendBase128(id, uint32(logNumber))
-	id = appendBase128(id, landmarkNum)
+	id = appendBase128(id, uint64(logNumber))
+	id = appendBase128(id, uint64(landmarkNum))
 	return id
 }
