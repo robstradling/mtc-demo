@@ -15,10 +15,19 @@ Certificate Transparency–style security properties.
 ## Installation
 
 ```
-go get mtc
+go install mtc/cmd/mtc-demo@latest
 ```
 
-Requires Go 1.25+ and depends on `golang.org/x/crypto/cryptobyte`.
+Or build from source:
+
+```
+git clone https://github.com/robstradling/mtc-demo
+cd mtc-demo
+go build ./cmd/mtc-demo/
+```
+
+Requires Go 1.25+ and depends on `golang.org/x/crypto/cryptobyte` and
+`filippo.io/mldsa` (ML-DSA post-quantum signatures).
 
 ## Overview
 
@@ -48,6 +57,87 @@ The package implements the full lifecycle described in the draft:
 └──────────────────────┘
 ```
 
+## CLI Tool
+
+The `mtc-demo` CLI provides subcommands for operating all MTC ecosystem
+roles: CA, cosigner, mirror, relying party, and landmark manager.
+
+State is persisted in `./mtc-state.json` (override with `MTC_STATE` env var).
+
+### Quick Start
+
+```sh
+# Initialize a CA and issuance log
+mtc-demo ca init 32473.1 1
+
+# Generate cosigner keys
+mtc-demo cosigner keygen 32473.100 ed25519
+mtc-demo cosigner keygen 32473.200 p256
+
+# Add certificate entries
+mtc-demo ca add example.com
+mtc-demo ca add test.example.com
+
+# Cosign subtrees (check subtree ranges with 'ca checkpoint')
+mtc-demo ca checkpoint
+mtc-demo cosigner sign 32473.100 0 2
+mtc-demo cosigner sign 32473.200 0 2
+
+# Issue and verify a certificate
+mtc-demo ca issue 1
+mtc-demo verify cert cert-1.pem
+```
+
+### CA Operations
+
+```
+mtc-demo ca init <ca-id> <log-number>    Initialize a new CA and issuance log
+mtc-demo ca info                         Show CA and log state
+mtc-demo ca add <common-name>            Add a TBS certificate entry to the log
+mtc-demo ca checkpoint                   Display current checkpoint and subtree hashes
+mtc-demo ca issue <index>                Issue a certificate for a log entry
+mtc-demo ca prune <min-index>            Prune entries below min-index
+```
+
+### Cosigner Operations
+
+```
+mtc-demo cosigner keygen <id> <algorithm>   Generate a key pair (ed25519, p256, p384)
+mtc-demo cosigner list                      List configured cosigner keys
+mtc-demo cosigner sign <id> <start> <end>   Cosign a subtree
+```
+
+### Mirror Operations
+
+```
+mtc-demo mirror inclusion <index>              Generate and verify an inclusion proof
+mtc-demo mirror consistency <old-size> <hex>   Verify consistency with a previous checkpoint
+```
+
+### Certificate Verification
+
+```
+mtc-demo verify cert <cert.pem>   Verify a Merkle Tree Certificate
+```
+
+### Landmark Operations
+
+```
+mtc-demo landmark init <max-active>   Initialize landmark sequence
+mtc-demo landmark allocate            Allocate a landmark at current tree size
+mtc-demo landmark info                Show landmark sequence info
+mtc-demo landmark find <index>        Find which landmark covers an entry
+```
+
+### Utilities
+
+```
+mtc-demo demo                          Run a full end-to-end lifecycle demo
+mtc-demo hash leaf [data]              Compute a Merkle leaf hash
+mtc-demo hash node <left-hex> <right-hex>   Compute an interior node hash
+mtc-demo tree [entries...]             Build a Merkle tree and show info
+```
+
 ## Package Structure
 
 | File | Spec Section | Purpose |
@@ -63,6 +153,7 @@ The package implements the full lifecycle described in the draft:
 | `verify.go` | §7.1–§7.5 | Relying party verification |
 | `log.go` | §5 | `IssuanceLog` management |
 | `landmark.go` | §6.3 | `LandmarkSequence` for size-optimized certificates |
+| `cmd/mtc-demo/` | — | CLI tool for operating MTC ecosystem roles |
 
 ## Usage
 
@@ -276,7 +367,7 @@ early experimentation:
 |-----|------|-------|
 | `1.3.6.1.4.1.44363.47.0` | `id-alg-mtcProof` | Certificate signature algorithm |
 | `1.3.6.1.4.1.44363.47.1` | `id-rdna-trustAnchorID` | Issuer DN attribute type |
-| `1.3.6.1.4.1.44363.47.2` | `id-ce-mtcCertificationAuthority` | MTC CA extension |
+| `1.3.6.1.4.1.44363.47.2` | `id-pe-mtcCertificationAuthority` | MTC CA extension |
 
 These will be replaced with IANA-assigned OIDs when the specification is finalized.
 
@@ -303,6 +394,12 @@ Not implemented (out of scope or dependent on external protocols):
 go test ./...
 ```
 
+To run the full lifecycle demo:
+
+```
+go run ./cmd/mtc-demo/ demo
+```
+
 ## License
 
 See LICENSE file.
@@ -322,3 +419,6 @@ See LICENSE file.
 - [2026-06-02] Compare this repository with https://github.com/mcpherrinm/cactus.  For any behaviour differences or compatibility issues found, determine if there's a bug in this repository, or in the cactus repository, or if the MTC specification is insufficiently clear.  Produce a .md report of recommendations.
 - [2026-06-02] Fix those bugs.  Plug those conformance gaps, using filippo.io/mldsa instead of crypto/mldsa (for Go 1.26 compatibility).  One git commit per item.
 Update the headings in COMPARISON-WITH-CACTUS.md to indicate each item that has been fixed or mitigated.
+- [2026-06-02] Create a CLI tool.
+- [2026-06-02] Add CLI subcommands for operating an MTC CA, mirror, and anything else that might be missing.
+- [2026-06-02] Review and update README.md as necessary.
