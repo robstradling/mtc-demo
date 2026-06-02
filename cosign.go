@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 
+	"filippo.io/mldsa"
 	"golang.org/x/crypto/cryptobyte"
 )
 
@@ -21,6 +22,7 @@ const (
 	SignatureP256SHA256 SignatureAlgorithm = iota
 	SignatureP384SHA384
 	SignatureEd25519
+	SignatureMLDSA44
 )
 
 // MTCSignature represents a cosignature with cosigner identity.
@@ -85,6 +87,10 @@ func Cosign(key *CosignerKey, logID TrustAnchorID, start, end uint64, hash *Hash
 	case SignatureEd25519:
 		signInput = input
 		opts = crypto.Hash(0)
+	case SignatureMLDSA44:
+		// ML-DSA signs the raw message with empty context (§5.3.3, RFC 9881 §3).
+		signInput = input
+		opts = &mldsa.Options{}
 	default:
 		return nil, fmt.Errorf("unsupported signature algorithm: %d", key.SignatureAlgorithm)
 	}
@@ -134,6 +140,17 @@ func VerifyCosignature(cosignerID TrustAnchorID, publicKey crypto.PublicKey, sig
 		}
 		if !ed25519.Verify(edKey, input, signature) {
 			return errors.New("Ed25519 signature verification failed")
+		}
+	case SignatureMLDSA44:
+		pk, ok := publicKey.(*mldsa.PublicKey)
+		if !ok {
+			return errors.New("not an ML-DSA public key")
+		}
+		if pk.Parameters() != mldsa.MLDSA44() {
+			return errors.New("not an ML-DSA-44 key")
+		}
+		if err := mldsa.Verify(pk, input, signature, &mldsa.Options{}); err != nil {
+			return fmt.Errorf("ML-DSA-44 signature verification failed: %w", err)
 		}
 	default:
 		return fmt.Errorf("unsupported signature algorithm: %d", sigAlg)
