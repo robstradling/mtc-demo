@@ -320,3 +320,5 @@ See LICENSE file.
 - [2026-04-23] Create README.md with full documentation
 - [2026-05-31] Update implementation to draft-ietf-plants-merkle-tree-certs-04
 - [2026-06-02] Compare this repository with https://github.com/mcpherrinm/cactus.  For any behaviour differences or compatibility issues found, determine if there's a bug in this repository, or in the cactus repository, or if the MTC specification is insufficiently clear.  Produce a .md report of recommendations.
+- [2026-06-02] Fix those bugs.  Plug those conformance gaps, using filippo.io/mldsa instead of crypto/mldsa (for Go 1.26 compatibility).  One git commit per item.
+Update the headings in COMPARISON-WITH-CACTUS.md to indicate each item that has been fixed or mitigated.
