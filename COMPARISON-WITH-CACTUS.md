@@ -18,7 +18,7 @@ spec ambiguities surfaced by the comparison.
 
 ## 1. Bugs in mtc-demo
 
-### 1.1 [BUG] Serial number overflow for log\_number ≥ 32768
+### 1.1 [BUG] [FIXED] Serial number overflow for log\_number ≥ 32768
 
 `cert.go` computes the serial as:
 
@@ -37,7 +37,7 @@ constructing them, correctly handling the full 1–65535 log-number range.
 
 **Fix:** use `uint64` arithmetic and encode via `AddASN1BigInt`.
 
-### 1.2 [BUG] MTCProof parser accepts trailing bytes
+### 1.2 [BUG] [FIXED] MTCProof parser accepts trailing bytes
 
 `UnmarshalMTCProof` in `cert.go` does not check whether the
 `cryptobyte.String` is empty after consuming the `signatures` vector.
@@ -54,7 +54,7 @@ if !s.Empty() {
 §6.1 implicitly requires full consumption (the structure is
 length-delimited by the BIT STRING).
 
-### 1.3 [BUG] MTCProof parser does not validate extension ordering
+### 1.3 [BUG] [FIXED] MTCProof parser does not validate extension ordering
 
 `UnmarshalMTCProof` stores the extensions vector as raw bytes without
 checking the §5.2.1 requirement that elements "MUST be appear in
@@ -64,7 +64,7 @@ ascending order by extension\_type" with no duplicates.  A parser
 **cactus** (`parseEntryExtensions`) validates ascending order and
 rejects duplicates.
 
-### 1.4 [BUG] MTCProof parser accepts empty cosigner\_id
+### 1.4 [BUG] [FIXED] MTCProof parser accepts empty cosigner\_id
 
 `UnmarshalMTCProof` does not reject a zero-length `cosigner_id`
 (TrustAnchorID `<1..2^8-1>` mandates at least one byte).
@@ -75,7 +75,7 @@ rejects duplicates.
 
 ## 2. Conformance gaps in mtc-demo
 
-### 2.1 [GAP] Inclusion-proof length not checked at parse time
+### 2.1 [GAP] [FIXED] Inclusion-proof length not checked at parse time
 
 `UnmarshalMTCProof` stores the inclusion proof as raw bytes without
 verifying that `len(inclusionProof) % HashSize == 0`.  The check is
@@ -85,7 +85,7 @@ evaluation.
 
 **cactus** validates at parse time in `ParseMTCProof`.
 
-### 2.2 [GAP] TrustAnchorID arc size limited to uint32
+### 2.2 [GAP] [FIXED] TrustAnchorID arc size limited to uint32
 
 `ParseTrustAnchorID` uses `ParseUint(…, 32)` and `appendBase128` takes
 `uint32`, limiting OID arc values to 2^32−1.
@@ -93,7 +93,7 @@ evaluation.
 **cactus** uses `uint64` for arcs, matching the RELATIVE-OID encoding
 capacity (base-128 supports arcs up to 2^63 in practice).
 
-### 2.3 [GAP] No ML-DSA signature support
+### 2.3 [GAP] [FIXED] No ML-DSA signature support
 
 mtc-demo supports ECDSA P-256/P-384 and Ed25519 for cosigning.
 
