@@ -1,5 +1,5 @@
 // Package mtc implements Merkle Tree Certificates as specified in
-// draft-ietf-plants-merkle-tree-certs-04.
+// draft-ietf-plants-merkle-tree-certs-05.
 package mtc
 
 import (
