@@ -93,6 +93,17 @@ func VerifySubtreeConsistencyProof(proof []byte, start, end, n int, nodeHash, ro
 		return fmt.Errorf("%w: proof length %d not a multiple of %d", ErrInvalidProof, len(proof), HashSize)
 	}
 
+	// Step 2: empty subtree.
+	if start == end {
+		if len(proof) != 0 {
+			return fmt.Errorf("%w: non-empty proof for empty subtree", ErrInvalidProof)
+		}
+		if nodeHash != HashEmpty() {
+			return fmt.Errorf("%w: empty subtree hash mismatch", ErrInvalidProof)
+		}
+		return nil
+	}
+
 	fn := start
 	sn := end - 1
 	tn := n - 1

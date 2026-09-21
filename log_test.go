@@ -103,12 +103,9 @@ func TestIssuanceLogCoveringSubtrees(t *testing.T) {
 		log.AddEntry(MarshalTBSCertEntry([]byte{byte(i)}))
 	}
 	// 13 entries. Covering subtrees for entries added after checkpoint at 8.
-	left, right, single, err := log.CoveringSubtrees(8)
+	left, right, err := log.CoveringSubtrees(8)
 	if err != nil {
 		t.Fatal(err)
-	}
-	if single {
-		t.Fatal("expected two subtrees")
 	}
 	if left.End != right.Start {
 		t.Fatalf("subtrees not contiguous: left.End=%d, right.Start=%d", left.End, right.Start)

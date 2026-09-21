@@ -20,7 +20,7 @@ type DemoState struct {
 	CAID      string `json:"ca_id"`
 	LogNumber uint16 `json:"log_number"`
 
-	// Hex-encoded serialized MerkleTreeCertEntry values.
+	// Hex-encoded serialized MTCLogEntry values.
 	Entries  []string `json:"entries"`
 	MinIndex int      `json:"min_index"`
 
@@ -51,6 +51,7 @@ type CosignerKeyConfig struct {
 type LandmarkConfig struct {
 	MaxActive int      `json:"max_active"`
 	TreeSizes []uint64 `json:"tree_sizes"`
+	Expiries  []uint64 `json:"expiries"` // seconds since the Epoch, parallel to TreeSizes
 }
 
 // loadState reads state from the state file. Returns nil if file doesn't exist.
@@ -139,7 +140,11 @@ func rebuildLandmarks(s *DemoState) (*mtc.LandmarkSequence, error) {
 	}
 	ls := mtc.NewLandmarkSequence(caID, s.LogNumber, s.Landmarks.MaxActive)
 	for i := 1; i < len(s.Landmarks.TreeSizes); i++ {
-		if err := ls.AllocateLandmark(s.Landmarks.TreeSizes[i]); err != nil {
+		var expiry uint64
+		if i < len(s.Landmarks.Expiries) {
+			expiry = s.Landmarks.Expiries[i]
+		}
+		if err := ls.AllocateLandmark(s.Landmarks.TreeSizes[i], expiry); err != nil {
 			return nil, fmt.Errorf("allocating landmark %d: %w", i, err)
 		}
 	}

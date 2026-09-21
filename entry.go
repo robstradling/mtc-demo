@@ -9,35 +9,38 @@ import (
 	cbasn1 "golang.org/x/crypto/cryptobyte/asn1"
 )
 
-// MerkleTreeCertEntryType identifies the type of a log entry.
-type MerkleTreeCertEntryType uint16
+// MTCLogEntryType identifies the type of a log entry.
+type MTCLogEntryType uint16
 
 const (
 	// EntryTypeNull is a null entry that carries no information.
-	EntryTypeNull MerkleTreeCertEntryType = 0
+	EntryTypeNull MTCLogEntryType = 0
 	// EntryTypeTBSCert is a TBSCertificateLogEntry.
-	EntryTypeTBSCert MerkleTreeCertEntryType = 1
+	EntryTypeTBSCert MTCLogEntryType = 1
 )
 
 var (
-	// OIDMTCProofExperimental is the experimental OID for id-alg-mtcProof.
+	// OIDMTCProofExperimental is the experimental OID for id-alg-mtcProof
+	// (1.3.6.1.4.1.44363.47.0).
 	OIDMTCProofExperimental = asn1.ObjectIdentifier{1, 3, 6, 1, 4, 1, 44363, 47, 0}
-	// OIDRDNATrustAnchorIDExperimental is the experimental OID for id-rdna-trustAnchorID.
-	OIDRDNATrustAnchorIDExperimental = asn1.ObjectIdentifier{1, 3, 6, 1, 4, 1, 44363, 47, 1}
-	// OIDMTCCertificationAuthorityExperimental is the experimental OID for id-pe-mtcCertificationAuthority.
-	OIDMTCCertificationAuthorityExperimental = asn1.ObjectIdentifier{1, 3, 6, 1, 4, 1, 44363, 47, 2}
+	// OIDRDNATrustAnchorIDExperimental is the experimental OID for
+	// id-rdna-trustAnchorID (1.3.6.1.4.1.44363.47.3).
+	OIDRDNATrustAnchorIDExperimental = asn1.ObjectIdentifier{1, 3, 6, 1, 4, 1, 44363, 47, 3}
+	// OIDMTCCertificationAuthoritySHA256Experimental is the experimental OID
+	// for id-pe-mtcCertificationAuthority-SHA256 (1.3.6.1.4.1.44363.47.4).
+	OIDMTCCertificationAuthoritySHA256Experimental = asn1.ObjectIdentifier{1, 3, 6, 1, 4, 1, 44363, 47, 4}
 )
 
-// MerkleTreeCertEntryExtension represents a tag-length-value extension
+// MTCLogEntryExtension represents a tag-length-value extension
 // associated with a log entry (Section 5.2.1).
-type MerkleTreeCertEntryExtension struct {
+type MTCLogEntryExtension struct {
 	ExtensionType uint16
 	ExtensionData []byte
 }
 
 // MarshalExtensions serializes a list of extensions using the TLS
 // presentation language as extensions<0..2^16-1>.
-func MarshalExtensions(exts []MerkleTreeCertEntryExtension) []byte {
+func MarshalExtensions(exts []MTCLogEntryExtension) []byte {
 	var inner []byte
 	for _, ext := range exts {
 		inner = append(inner, byte(ext.ExtensionType>>8), byte(ext.ExtensionType))
@@ -60,7 +63,7 @@ func MarshalNullEntry() []byte {
 
 // MarshalNullEntryWithExtensions returns the serialized form of a
 // null_entry with the given extensions.
-func MarshalNullEntryWithExtensions(exts []MerkleTreeCertEntryExtension) []byte {
+func MarshalNullEntryWithExtensions(exts []MTCLogEntryExtension) []byte {
 	b := MarshalExtensions(exts)
 	b = append(b, byte(EntryTypeNull>>8), byte(EntryTypeNull))
 	return b
@@ -76,7 +79,7 @@ func MarshalTBSCertEntry(tbsCertLogEntryContents []byte) []byte {
 
 // MarshalTBSCertEntryWithExtensions marshals a tbs_cert_entry with the
 // given extensions.
-func MarshalTBSCertEntryWithExtensions(exts []MerkleTreeCertEntryExtension, tbsCertLogEntryContents []byte) []byte {
+func MarshalTBSCertEntryWithExtensions(exts []MTCLogEntryExtension, tbsCertLogEntryContents []byte) []byte {
 	b := MarshalExtensions(exts)
 	b = append(b, byte(EntryTypeTBSCert>>8), byte(EntryTypeTBSCert))
 	b = append(b, tbsCertLogEntryContents...)
@@ -213,7 +216,7 @@ func BuildTBSCertificateLogEntry(tbsCert []byte) ([]byte, error) {
 	return b.Bytes()
 }
 
-// HashEntry computes the Merkle leaf hash of a serialized MerkleTreeCertEntry.
+// HashEntry computes the Merkle leaf hash of a serialized MTCLogEntry.
 func HashEntry(entry []byte) HashValue {
 	return HashLeaf(entry)
 }

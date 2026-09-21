@@ -7,15 +7,31 @@ import (
 
 // IsValidSubtree checks whether [start, end) defines a valid subtree
 // as specified in Section 4.1:
-//   - 0 <= start < end
+//   - 0 <= start <= end
 //   - start is a multiple of BIT_CEIL(end - start)
+//
+// Per draft-06, empty subtrees [x, x) are valid (BIT_CEIL(0) is 1), as
+// is [0, x) for all x.
 func IsValidSubtree(start, end int) bool {
-	if start < 0 || start >= end {
+	if start < 0 || end < 0 {
+		return false
+	}
+	return isValidSubtreeU64(uint64(start), uint64(end))
+}
+
+// isValidSubtreeU64 checks subtree validity over uint64 values, handling
+// the potential overflow of BIT_CEIL near 2^64 as described in Section 4.1.
+func isValidSubtreeU64(start, end uint64) bool {
+	if start > end {
 		return false
 	}
 	size := end - start
-	ceil := bitCeil(uint(size))
-	return uint(start)&(ceil-1) == 0
+	if size > (uint64(1) << 63) {
+		// bitCeil below would overflow; only [0, end) is aligned.
+		return start == 0
+	}
+	ceil := bitCeilU64(size)
+	return start&(ceil-1) == 0
 }
 
 // bitCeil returns the smallest power of two >= n.
@@ -26,20 +42,27 @@ func bitCeil(n uint) uint {
 	return 1 << bits.Len(n-1)
 }
 
-// FindSubtrees returns one or two subtrees that efficiently cover
-// the interval [start, end), as described in Section 4.5.
-//
-// Returns (left, right, singleSubtree):
-//   - If singleSubtree is true, left covers the entire interval and right is zero-valued.
-//   - Otherwise, both left and right cover the interval, with left.End == right.Start.
-func FindSubtrees(start, end int) (left, right Interval, single bool, err error) {
-	if start < 0 || start >= end {
+// bitCeilU64 returns the smallest power of two >= n, for n <= 2^63.
+func bitCeilU64(n uint64) uint64 {
+	if n <= 1 {
+		return 1
+	}
+	return uint64(1) << bits.Len64(n-1)
+}
+
+// FindSubtrees returns the two subtrees that efficiently cover the
+// interval [start, end), as described in Section 4.5. Per draft-06 the
+// covering function always returns two (possibly empty) subtrees, with
+// left.End == right.Start == end when the interval has at most one
+// element.
+func FindSubtrees(start, end int) (left, right Interval, err error) {
+	if start < 0 || start > end {
 		err = fmt.Errorf("invalid interval [%d, %d)", start, end)
 		return
 	}
-	if end-start == 1 {
+	if end-start <= 1 {
 		left = Interval{Start: start, End: end}
-		single = true
+		right = Interval{Start: end, End: end}
 		return
 	}
 	last := end - 1

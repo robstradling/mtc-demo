@@ -5,9 +5,14 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"time"
 
 	"mtc"
 )
+
+// defaultMaxCertLifetime is the assumed maximum certificate lifetime used
+// to derive landmark expiration times (Section 6.4.1). The demo uses 7 days.
+const defaultMaxCertLifetime = 7 * 24 * time.Hour
 
 func cmdLandmark(args []string) error {
 	if len(args) < 1 {
@@ -57,6 +62,7 @@ func cmdLandmarkInit(args []string) error {
 	s.Landmarks = &LandmarkConfig{
 		MaxActive: maxActive,
 		TreeSizes: []uint64{0}, // landmark 0
+		Expiries:  []uint64{0}, // landmark 0 expires at the Epoch
 	}
 	if err := saveState(s); err != nil {
 		return err
@@ -85,11 +91,13 @@ func cmdLandmarkAllocate() error {
 	}
 
 	treeSize := uint64(log.Size())
-	if err := ls.AllocateLandmark(treeSize); err != nil {
+	expiry := uint64(time.Now().Add(defaultMaxCertLifetime).Unix())
+	if err := ls.AllocateLandmark(treeSize, expiry); err != nil {
 		return err
 	}
 
 	s.Landmarks.TreeSizes = append(s.Landmarks.TreeSizes, treeSize)
+	s.Landmarks.Expiries = append(s.Landmarks.Expiries, expiry)
 	if err := saveState(s); err != nil {
 		return err
 	}
@@ -98,16 +106,19 @@ func cmdLandmarkAllocate() error {
 	fmt.Printf("Landmark allocated:\n")
 	fmt.Printf("  Landmark #:    %d\n", landmarkNum)
 	fmt.Printf("  Tree size:     %d\n", treeSize)
+	fmt.Printf("  Expires:       %s\n", time.Unix(int64(expiry), 0).UTC().Format(time.RFC3339))
 	fmt.Printf("  Trust anchor:  %s\n", ls.LandmarkTrustAnchorID(landmarkNum))
 
 	// Show subtrees for this landmark.
-	left, right, single, err := ls.LandmarkSubtrees(landmarkNum)
+	left, right, err := ls.LandmarkSubtrees(landmarkNum)
 	if err != nil {
 		return err
 	}
 	fmt.Printf("  Subtrees:\n")
-	printSubtreeHash(log, left)
-	if !single {
+	if left.Size() > 0 {
+		printSubtreeHash(log, left)
+	}
+	if right.Size() > 0 {
 		printSubtreeHash(log, right)
 	}
 
@@ -138,22 +149,30 @@ func cmdLandmarkInfo() error {
 	fmt.Printf("  Last landmark:   %d\n", ls.LastLandmark())
 	fmt.Printf("  Max active:      %d\n", s.Landmarks.MaxActive)
 
-	active := ls.ActiveLandmarks()
+	now := uint64(time.Now().Unix())
+	active := ls.ActiveLandmarks(now)
 	if len(active) > 0 {
 		fmt.Printf("  Active landmarks: %v\n", active)
 	}
 
-	fmt.Printf("\n  %-8s  %-12s  %s\n", "LANDMARK", "TREE SIZE", "TRUST ANCHOR ID")
+	activeSet := make(map[int]bool, len(active))
+	for _, a := range active {
+		activeSet[a] = true
+	}
+
+	fmt.Printf("\n  %-8s  %-12s  %-20s  %s\n", "LANDMARK", "TREE SIZE", "EXPIRES", "TRUST ANCHOR ID")
 	for i := 0; i < ls.Count(); i++ {
 		ts, _ := ls.TreeSize(i)
-		activeStr := ""
-		for _, a := range active {
-			if a == i {
-				activeStr = " (active)"
-				break
-			}
+		expiry, _ := ls.Expiry(i)
+		expiryStr := "-"
+		if expiry != 0 {
+			expiryStr = time.Unix(int64(expiry), 0).UTC().Format(time.RFC3339)
 		}
-		fmt.Printf("  %-8d  %-12d  %s%s\n", i, ts, ls.LandmarkTrustAnchorID(i), activeStr)
+		activeStr := ""
+		if activeSet[i] {
+			activeStr = " (active)"
+		}
+		fmt.Printf("  %-8d  %-12d  %-20s  %s%s\n", i, ts, expiryStr, ls.LandmarkTrustAnchorID(i), activeStr)
 	}
 
 	return nil

@@ -4,6 +4,9 @@ import (
 	"testing"
 )
 
+// farFuture is an expiration time well beyond any test's notion of "now".
+const farFuture = uint64(1 << 40)
+
 func TestLandmarkSequence(t *testing.T) {
 	caID, _ := ParseTrustAnchorID("32473.1")
 	ls := NewLandmarkSequence(caID, 1, 5)
@@ -18,13 +21,13 @@ func TestLandmarkSequence(t *testing.T) {
 	}
 
 	// Allocate some landmarks.
-	if err := ls.AllocateLandmark(100); err != nil {
+	if err := ls.AllocateLandmark(100, farFuture); err != nil {
 		t.Fatal(err)
 	}
-	if err := ls.AllocateLandmark(200); err != nil {
+	if err := ls.AllocateLandmark(200, farFuture); err != nil {
 		t.Fatal(err)
 	}
-	if err := ls.AllocateLandmark(300); err != nil {
+	if err := ls.AllocateLandmark(300, farFuture); err != nil {
 		t.Fatal(err)
 	}
 
@@ -35,72 +38,74 @@ func TestLandmarkSequence(t *testing.T) {
 		t.Fatalf("LastLandmark = %d, want 3", ls.LastLandmark())
 	}
 
-	// Cannot go backwards.
-	if err := ls.AllocateLandmark(150); err == nil {
+	// Cannot go backwards in tree size.
+	if err := ls.AllocateLandmark(150, farFuture); err == nil {
 		t.Fatal("expected error for non-increasing tree size")
+	}
+
+	// Expiry must be monotonically non-decreasing.
+	if err := ls.AllocateLandmark(400, farFuture-1); err == nil {
+		t.Fatal("expected error for decreasing expiry")
 	}
 }
 
 func TestLandmarkSubtrees(t *testing.T) {
 	caID, _ := ParseTrustAnchorID("32473.1")
 	ls := NewLandmarkSequence(caID, 1, 5)
-	ls.AllocateLandmark(100)
-	ls.AllocateLandmark(200)
+	ls.AllocateLandmark(100, farFuture)
+	ls.AllocateLandmark(200, farFuture)
 
 	// Landmark 1 subtrees cover [0, 100).
-	left, right, single, err := ls.LandmarkSubtrees(1)
+	_, right, err := ls.LandmarkSubtrees(1)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if single {
-		if left.End != 100 {
-			t.Fatalf("expected end=100, got %d", left.End)
-		}
-	} else {
-		if right.End != 100 {
-			t.Fatalf("expected right.End=100, got %d", right.End)
-		}
+	if right.End != 100 {
+		t.Fatalf("expected right.End=100, got %d", right.End)
 	}
 
 	// Landmark 2 subtrees cover [100, 200).
-	left2, right2, single2, err := ls.LandmarkSubtrees(2)
+	left2, right2, err := ls.LandmarkSubtrees(2)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if single2 {
-		if left2.Start > 100 || left2.End != 200 {
-			t.Fatalf("unexpected subtree [%d, %d)", left2.Start, left2.End)
-		}
-	} else {
-		if left2.Start > 100 {
-			t.Fatalf("left.Start %d > 100", left2.Start)
-		}
-		if right2.End != 200 {
-			t.Fatalf("right.End = %d, want 200", right2.End)
-		}
+	if left2.Start > 100 {
+		t.Fatalf("left.Start %d > 100", left2.Start)
+	}
+	if right2.End != 200 {
+		t.Fatalf("right.End = %d, want 200", right2.End)
 	}
 }
 
 func TestLandmarkActiveLandmarks(t *testing.T) {
 	caID, _ := ParseTrustAnchorID("32473.1")
 	ls := NewLandmarkSequence(caID, 1, 3)
-	for i := 1; i <= 5; i++ {
-		ls.AllocateLandmark(uint64(i * 100))
+	// Landmarks 1-3 expire at 100, 4-5 expire far in the future.
+	ls.AllocateLandmark(100, 100)
+	ls.AllocateLandmark(200, 100)
+	ls.AllocateLandmark(300, 100)
+	ls.AllocateLandmark(400, farFuture)
+	ls.AllocateLandmark(500, farFuture)
+
+	// At time 150, landmarks 1-3 are expired; 4 and 5 are active.
+	active := ls.ActiveLandmarks(150)
+	if len(active) != 2 {
+		t.Fatalf("active landmarks count = %d, want 2", len(active))
 	}
-	// 6 landmarks total (0-5). MaxActive=3, so active = [3, 4, 5].
-	active := ls.ActiveLandmarks()
-	if len(active) != 3 {
-		t.Fatalf("active landmarks count = %d, want 3", len(active))
+	if active[0] != 4 || active[1] != 5 {
+		t.Fatalf("active = %v, want [4, 5]", active)
 	}
-	if active[0] != 3 || active[1] != 4 || active[2] != 5 {
-		t.Fatalf("active = %v, want [3, 4, 5]", active)
+
+	// At time 50, all landmarks are active.
+	if got := ls.ActiveLandmarks(50); len(got) != 5 {
+		t.Fatalf("active landmarks at t=50 = %d, want 5", len(got))
 	}
 }
 
 func TestLandmarkTrustAnchorID(t *testing.T) {
 	caID, _ := ParseTrustAnchorID("32473.1")
 	ls := NewLandmarkSequence(caID, 1, 5)
-	ls.AllocateLandmark(100)
+	ls.AllocateLandmark(100, farFuture)
 
 	// Landmark ID = {caID landmarks(1) N L} = 32473.1.1.1.42
 	id := ls.LandmarkTrustAnchorID(42)
@@ -113,9 +118,9 @@ func TestLandmarkTrustAnchorID(t *testing.T) {
 func TestLandmarkFindContaining(t *testing.T) {
 	caID, _ := ParseTrustAnchorID("32473.1")
 	ls := NewLandmarkSequence(caID, 1, 10)
-	ls.AllocateLandmark(100)
-	ls.AllocateLandmark(200)
-	ls.AllocateLandmark(300)
+	ls.AllocateLandmark(100, farFuture)
+	ls.AllocateLandmark(200, farFuture)
+	ls.AllocateLandmark(300, farFuture)
 
 	num, subtree, err := ls.FindContainingLandmark(150)
 	if err != nil {

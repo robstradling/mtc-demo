@@ -53,8 +53,8 @@ func (p *MTCProof) Marshal() ([]byte, error) {
 	b.AddUint16LengthPrefixed(func(child *cryptobyte.Builder) {
 		child.AddBytes(p.InclusionProof)
 	})
-	// signatures<0..2^16-1>
-	b.AddUint16LengthPrefixed(func(sigs *cryptobyte.Builder) {
+	// signatures<0..2^24-1>
+	b.AddUint24LengthPrefixed(func(sigs *cryptobyte.Builder) {
 		for _, sig := range p.Signatures {
 			sigs.AddUint8LengthPrefixed(func(child *cryptobyte.Builder) {
 				child.AddBytes(sig.CosignerID)
@@ -129,9 +129,9 @@ func UnmarshalMTCProof(data []byte) (*MTCProof, error) {
 	}
 	p.InclusionProof = []byte(inclusionProof)
 
-	// signatures<0..2^16-1>
+	// signatures<0..2^24-1>
 	var signatures cryptobyte.String
-	if !s.ReadUint16LengthPrefixed(&signatures) {
+	if !s.ReadUint24LengthPrefixed(&signatures) {
 		return nil, errors.New("could not read signatures")
 	}
 	var prevID TrustAnchorID
@@ -196,7 +196,7 @@ func sortSignatures(sigs []MTCSignature) {
 //   - tbsCertFields: callback to write validity, subject, extensions into the TBSCertificate
 //   - spki: the DER-encoded SubjectPublicKeyInfo
 //   - start, end: the subtree for the proof
-//   - extensions: serialized MerkleTreeCertEntryExtension extensions (or nil)
+//   - extensions: serialized MTCLogEntryExtension extensions (or nil)
 //   - cosignerKeys: cosigner keys to produce cosignatures
 func CreateCertificate(mt *MerkleTree, issuer TrustAnchorID, logID TrustAnchorID, logNumber uint16, index int, tbsCertFields func(b *cryptobyte.Builder), spki []byte, start, end int, extensions []byte, cosignerKeys []*CosignerKey) ([]byte, error) {
 	// Build inclusion proof
@@ -281,13 +281,17 @@ func addMTCProofAlg(b *cryptobyte.Builder) {
 }
 
 // addIssuerDN adds the issuer distinguished name containing the trust anchor ID.
+// Per Section 5.1, the attribute value is a RELATIVE-OID holding the trust
+// anchor ID's ASN.1 representation.
 func addIssuerDN(b *cryptobyte.Builder, issuer TrustAnchorID) {
 	b.AddASN1(cbasn1.SEQUENCE, func(dn *cryptobyte.Builder) {
 		dn.AddASN1(cbasn1.SET, func(rdn *cryptobyte.Builder) {
 			rdn.AddASN1(cbasn1.SEQUENCE, func(attr *cryptobyte.Builder) {
 				attr.AddASN1ObjectIdentifier(OIDRDNATrustAnchorIDExperimental)
-				attr.AddASN1(cbasn1.UTF8String, func(val *cryptobyte.Builder) {
-					val.AddBytes([]byte(issuer.String()))
+				// RELATIVE-OID (universal tag 13) containing the trust
+				// anchor ID's base-128 encoding.
+				attr.AddASN1(cbasn1.Tag(13), func(val *cryptobyte.Builder) {
+					val.AddBytes([]byte(issuer))
 				})
 			})
 		})

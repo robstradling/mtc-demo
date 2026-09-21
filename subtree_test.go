@@ -19,8 +19,10 @@ func TestIsValidSubtree(t *testing.T) {
 		{3, 7, false},
 		{5, 8, false},
 		{1, 3, false},
-		// Invalid: start >= end.
-		{5, 5, false},
+		// Empty subtrees are valid (draft-06).
+		{5, 5, true},
+		{0, 0, true},
+		// Invalid: start > end.
 		{5, 3, false},
 		// Invalid: negative.
 		{-1, 5, false},
@@ -38,61 +40,60 @@ func TestFindSubtrees(t *testing.T) {
 		start, end int
 		// Expected coverage.
 		leftStart, leftEnd, rightStart, rightEnd int
-		single                                   bool
 	}{
-		// Single entry.
-		{5, 6, 5, 6, 0, 0, true},
+		// Single entry: left = [start, end), right = [end, end).
+		{5, 6, 5, 6, 6, 6},
 		// [5, 13) should give [4, 8) and [8, 13).
-		{5, 13, 4, 8, 8, 13, false},
+		{5, 13, 4, 8, 8, 13},
 		// [7, 9) should give [7, 8) and [8, 9).
-		{7, 9, 7, 8, 8, 9, false},
+		{7, 9, 7, 8, 8, 9},
 		// [0, 8) returns two subtrees per the spec.
-		{0, 8, 0, 4, 4, 8, false},
+		{0, 8, 0, 4, 4, 8},
 	}
 	for _, tc := range tests {
-		left, right, single, err := FindSubtrees(tc.start, tc.end)
+		left, right, err := FindSubtrees(tc.start, tc.end)
 		if err != nil {
 			t.Fatalf("FindSubtrees(%d, %d) error: %v", tc.start, tc.end, err)
-		}
-		if single != tc.single {
-			t.Fatalf("FindSubtrees(%d, %d) single=%v, want %v", tc.start, tc.end, single, tc.single)
 		}
 		if left.Start != tc.leftStart || left.End != tc.leftEnd {
 			t.Fatalf("FindSubtrees(%d, %d) left=[%d, %d), want [%d, %d)",
 				tc.start, tc.end, left.Start, left.End, tc.leftStart, tc.leftEnd)
 		}
-		if !single {
-			if right.Start != tc.rightStart || right.End != tc.rightEnd {
-				t.Fatalf("FindSubtrees(%d, %d) right=[%d, %d), want [%d, %d)",
-					tc.start, tc.end, right.Start, right.End, tc.rightStart, tc.rightEnd)
-			}
-			// Verify properties from the spec.
-			if left.End != right.Start {
-				t.Fatalf("left.End (%d) != right.Start (%d)", left.End, right.Start)
-			}
-			if left.Start > tc.start {
-				t.Fatalf("left.Start (%d) > start (%d)", left.Start, tc.start)
-			}
-			if right.End != tc.end {
-				t.Fatalf("right.End (%d) != end (%d)", right.End, tc.end)
-			}
+		if right.Start != tc.rightStart || right.End != tc.rightEnd {
+			t.Fatalf("FindSubtrees(%d, %d) right=[%d, %d), want [%d, %d)",
+				tc.start, tc.end, right.Start, right.End, tc.rightStart, tc.rightEnd)
+		}
+		// Verify properties from the spec.
+		if left.End != right.Start {
+			t.Fatalf("left.End (%d) != right.Start (%d)", left.End, right.Start)
+		}
+		if left.Start > tc.start {
+			t.Fatalf("left.Start (%d) > start (%d)", left.Start, tc.start)
+		}
+		if right.End != tc.end {
+			t.Fatalf("right.End (%d) != end (%d)", right.End, tc.end)
 		}
 		// All results should be valid subtrees.
 		if !left.IsValid() {
 			t.Fatalf("left subtree [%d, %d) is not valid", left.Start, left.End)
 		}
-		if !single && !right.IsValid() {
+		if !right.IsValid() {
 			t.Fatalf("right subtree [%d, %d) is not valid", right.Start, right.End)
 		}
 	}
 }
 
 func TestFindSubtreesInvalid(t *testing.T) {
-	_, _, _, err := FindSubtrees(5, 5)
-	if err == nil {
-		t.Fatal("expected error for start == end")
+	// start == end is now valid and returns two empty subtrees.
+	left, right, err := FindSubtrees(5, 5)
+	if err != nil {
+		t.Fatalf("FindSubtrees(5, 5) unexpected error: %v", err)
 	}
-	_, _, _, err = FindSubtrees(5, 3)
+	if left.Size() != 0 || right.Size() != 0 {
+		t.Fatalf("FindSubtrees(5, 5) = [%d,%d),[%d,%d), want two empty subtrees",
+			left.Start, left.End, right.Start, right.End)
+	}
+	_, _, err = FindSubtrees(5, 3)
 	if err == nil {
 		t.Fatal("expected error for start > end")
 	}

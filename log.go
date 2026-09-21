@@ -11,7 +11,7 @@ type IssuanceLog struct {
 	caID      TrustAnchorID
 	logNumber uint16
 	logID     TrustAnchorID
-	entries   [][]byte // serialized MerkleTreeCertEntry values
+	entries   [][]byte // serialized MTCLogEntry values
 	tree      *MerkleTree
 	minIndex  int // minimum available index (for pruning)
 }
@@ -56,7 +56,7 @@ func (l *IssuanceLog) MinIndex() int {
 	return l.minIndex
 }
 
-// AddEntry appends a serialized MerkleTreeCertEntry to the log
+// AddEntry appends a serialized MTCLogEntry to the log
 // and returns its index. The Merkle tree is rebuilt after each addition.
 func (l *IssuanceLog) AddEntry(entry []byte) int {
 	l.entries = append(l.entries, entry)
@@ -119,8 +119,8 @@ func (l *IssuanceLog) SubtreeConsistencyProof(start, end int) ([]byte, error) {
 	return l.tree.SubtreeConsistencyProof(start, end)
 }
 
-// CoveringSubtrees returns the one or two subtrees that cover entries
+// CoveringSubtrees returns the two subtrees that cover entries
 // added between prevCheckpoint and the current tree size.
-func (l *IssuanceLog) CoveringSubtrees(prevCheckpoint int) (left, right Interval, single bool, err error) {
+func (l *IssuanceLog) CoveringSubtrees(prevCheckpoint int) (left, right Interval, err error) {
 	return FindSubtrees(prevCheckpoint, l.Size())
 }

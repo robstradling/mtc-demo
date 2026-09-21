@@ -21,6 +21,13 @@ func HashLeaf(data []byte) HashValue {
 	return ret
 }
 
+// HashEmpty computes MTH({}) = HASH(), the hash of the empty string,
+// as defined in Section 2.1.1 of RFC 9162. It is the hash of an empty
+// (zero-size) subtree.
+func HashEmpty() HashValue {
+	return sha256.Sum256(nil)
+}
+
 // HashNode computes HASH(0x01 || left || right) as defined in
 // Section 2.1.1 of RFC 9162.
 func HashNode(left, right *HashValue) HashValue {

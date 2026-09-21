@@ -173,7 +173,7 @@ func VerifyCertificateSignature(certDER []byte, cfg *VerifierConfig) error {
 		return fmt.Errorf("parsing MTCProof: %w", err)
 	}
 
-	// Step 8: Construct MerkleTreeCertEntry with extensions from MTCProof.
+	// Step 8: Construct MTCLogEntry with extensions from MTCProof.
 	entryContents, err := BuildTBSCertificateLogEntry(tbsBytes)
 	if err != nil {
 		return fmt.Errorf("building TBSCertificateLogEntry: %w", err)

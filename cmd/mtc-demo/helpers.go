@@ -153,14 +153,18 @@ If no entries are given, reads lines from stdin.
 // ── Shared helpers ──────────────────────────────────────────────────
 
 func findSubtreeSlice(start, end int) ([]mtc.Interval, error) {
-	left, right, single, err := mtc.FindSubtrees(start, end)
+	left, right, err := mtc.FindSubtrees(start, end)
 	if err != nil {
 		return nil, err
 	}
-	if single {
-		return []mtc.Interval{left}, nil
+	var out []mtc.Interval
+	if left.Size() > 0 {
+		out = append(out, left)
 	}
-	return []mtc.Interval{left, right}, nil
+	if right.Size() > 0 {
+		out = append(out, right)
+	}
+	return out, nil
 }
 
 func section(title string) {
@@ -246,8 +250,9 @@ func addIssuerDN(b *cryptobyte.Builder, issuer mtc.TrustAnchorID) {
 		dn.AddASN1(cbasn1.SET, func(rdn *cryptobyte.Builder) {
 			rdn.AddASN1(cbasn1.SEQUENCE, func(attr *cryptobyte.Builder) {
 				attr.AddASN1ObjectIdentifier(mtc.OIDRDNATrustAnchorIDExperimental)
-				attr.AddASN1(cbasn1.UTF8String, func(val *cryptobyte.Builder) {
-					val.AddBytes([]byte(issuer.String()))
+				// RELATIVE-OID (universal tag 13) of the trust anchor ID.
+				attr.AddASN1(cbasn1.Tag(13), func(val *cryptobyte.Builder) {
+					val.AddBytes([]byte(issuer))
 				})
 			})
 		})

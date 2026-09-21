@@ -54,6 +54,10 @@ func (mt *MerkleTree) SubtreeHash(start, end int) (HashValue, error) {
 	if end > mt.Size() {
 		return HashValue{}, fmt.Errorf("subtree [%d, %d) exceeds tree of size %d", start, end, mt.Size())
 	}
+	if start == end {
+		// Empty subtree: MTH({}) = HASH().
+		return HashEmpty(), nil
+	}
 	// Start at the largest complete subtree on the right edge.
 	last := end - 1
 	level := bits.TrailingZeros(^uint(last - start))
@@ -115,6 +119,10 @@ func (mt *MerkleTree) SubtreeConsistencyProof(start, end int) ([]byte, error) {
 	n := mt.Size()
 	if end > n {
 		return nil, fmt.Errorf("subtree [%d, %d) exceeds tree of size %d", start, end, n)
+	}
+	if start == end {
+		// SUBTREE_PROOF(start, start, D_n) = {} (empty).
+		return nil, nil
 	}
 	var proof []byte
 	mt.subtreeSubproof(start, end, 0, n, true, &proof)
