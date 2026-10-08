@@ -18,7 +18,7 @@ type MTCProof struct {
 	Start          uint64
 	End            uint64
 	InclusionProof []byte
-	Signatures     []MTCSignature
+	Signatures     []Cosignature
 }
 
 // addUint48 appends a big-endian 48-bit integer to the builder.
@@ -136,7 +136,7 @@ func UnmarshalMTCProof(data []byte) (*MTCProof, error) {
 	}
 	var prevID TrustAnchorID
 	for !signatures.Empty() {
-		var sig MTCSignature
+		var sig Cosignature
 		var cosignerID cryptobyte.String
 		if !signatures.ReadUint8LengthPrefixed(&cosignerID) {
 			return nil, errors.New("could not read cosigner_id")
@@ -177,8 +177,8 @@ func compareCosignerIDs(a, b TrustAnchorID) int {
 	return bytes.Compare(a, b)
 }
 
-// sortSignatures sorts MTCSignature slices by cosigner_id in canonical order.
-func sortSignatures(sigs []MTCSignature) {
+// sortSignatures sorts Cosignature slices by cosigner_id in canonical order.
+func sortSignatures(sigs []Cosignature) {
 	sort.Slice(sigs, func(i, j int) bool {
 		return compareCosignerIDs(sigs[i].CosignerID, sigs[j].CosignerID) < 0
 	})
@@ -212,13 +212,13 @@ func CreateCertificate(mt *MerkleTree, issuer TrustAnchorID, logID TrustAnchorID
 	}
 
 	// Generate cosignatures
-	var sigs []MTCSignature
+	var sigs []Cosignature
 	for _, ck := range cosignerKeys {
 		sig, err := Cosign(ck, logID, uint64(start), uint64(end), &subtreeHash)
 		if err != nil {
 			return nil, fmt.Errorf("cosigning: %w", err)
 		}
-		sigs = append(sigs, MTCSignature{
+		sigs = append(sigs, Cosignature{
 			CosignerID: ck.CosignerID,
 			Signature:  sig,
 		})
@@ -276,7 +276,7 @@ func CreateCertificate(mt *MerkleTree, issuer TrustAnchorID, logID TrustAnchorID
 // addMTCProofAlg adds the id-alg-mtcProof AlgorithmIdentifier (no parameters).
 func addMTCProofAlg(b *cryptobyte.Builder) {
 	b.AddASN1(cbasn1.SEQUENCE, func(alg *cryptobyte.Builder) {
-		alg.AddASN1ObjectIdentifier(OIDMTCProofExperimental)
+		alg.AddASN1ObjectIdentifier(OIDMTCProof)
 	})
 }
 
@@ -287,7 +287,7 @@ func addIssuerDN(b *cryptobyte.Builder, issuer TrustAnchorID) {
 	b.AddASN1(cbasn1.SEQUENCE, func(dn *cryptobyte.Builder) {
 		dn.AddASN1(cbasn1.SET, func(rdn *cryptobyte.Builder) {
 			rdn.AddASN1(cbasn1.SEQUENCE, func(attr *cryptobyte.Builder) {
-				attr.AddASN1ObjectIdentifier(OIDRDNATrustAnchorIDExperimental)
+				attr.AddASN1ObjectIdentifier(OIDRDNATrustAnchorID)
 				// RELATIVE-OID (universal tag 13) containing the trust
 				// anchor ID's base-128 encoding.
 				attr.AddASN1(cbasn1.Tag(13), func(val *cryptobyte.Builder) {

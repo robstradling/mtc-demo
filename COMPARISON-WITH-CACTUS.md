@@ -125,7 +125,7 @@ cosigner\_name strings.
 
 | | mtc-demo | cactus |
 |---|---|---|
-| Type | `[]byte` (raw, including 2-byte length prefix) | `[]MerkleTreeCertEntryExtension` (structured) |
+| Type | `[]byte` (raw, including 2-byte length prefix) | `[]MTCLogEntryExtension` (structured) |
 | Marshal | `AddBytes(p.Extensions)` | `AddUint16LengthPrefixed(…)` over each ext |
 | Unmarshal | Store raw bytes | Parse into typed structs |
 
@@ -133,7 +133,7 @@ Wire output is byte-identical for the same logical extensions.
 
 ### 3.3 [COMPAT] Entry hash computation path
 
-mtc-demo builds a complete `MerkleTreeCertEntry` (extensions + type +
+mtc-demo builds a complete `MTCLogEntry` (extensions + type +
 data) as `[]byte`, then calls `HashEntry → HashLeaf → HASH(0x00 || entry)`.
 
 cactus streams the components directly into the hasher in `EntryHashExt`:
@@ -166,15 +166,16 @@ comparator (it is not plain `memcmp`), but both implementations agree.
 
 ### 3.6 [COMPAT] FindSubtrees return shape
 
-mtc-demo returns `(left, right Interval, single bool, err error)`.
+mtc-demo returns `(left, right Interval, err error)`.
 cactus returns `[]Subtree` (length 1 or 2).
 
-Algorithmically identical.  Both always return two subtrees for
-intervals of size > 1, per the §4.5 Python reference code.
+Algorithmically identical.  Per draft-06, both always return two
+(possibly empty) subtrees, per the §4.5 Python reference code.
 
-### 3.7 [COMPAT] CosignedMessage format
+### 3.7 [COMPAT] CosignedSubtree format
 
-Both marshal the §5.3.1 CosignedMessage identically:
+Both marshal the §5.3.1 CosignedSubtree (named CosignedMessage before
+draft-07) identically:
 `label(12) || cosigner_name(u8-prefixed) || timestamp(u64=0) || log_origin(u8-prefixed) || start(u64) || end(u64) || subtree_hash(32)`.
 
 ### 3.8 [COMPAT] Issuer DN construction
@@ -184,6 +185,9 @@ Both use the experimental form from §5.1:
 - Attribute type: OID `1.3.6.1.4.1.44363.47.1` (`id-rdna-trustAnchorID`)
 - Attribute value: `UTF8String` containing the trust anchor ID's
   relative dotted-decimal ASCII (e.g. `"32473.1"`)
+
+> **Update:** mtc-demo now follows draft-07: attribute type
+> `1.3.6.1.5.5.7.25.3` with a `RELATIVE-OID` value.
 
 ### 3.9 [COMPAT] Null entry encoding
 
@@ -199,6 +203,11 @@ Both use the same experimental-arc OIDs from the draft:
 | `1.3.6.1.4.1.44363.47.0` | `id-alg-mtcProof` |
 | `1.3.6.1.4.1.44363.47.1` | `id-rdna-trustAnchorID` |
 | `1.3.6.1.4.1.44363.47.2` | `id-pe-mtcCertificationAuthority` |
+
+> **Update:** draft-07 allocated final OIDs, which mtc-demo now uses:
+> `id-alg-mtcProof` = `1.3.6.1.5.5.7.6.67`,
+> `id-rdna-trustAnchorID` = `1.3.6.1.5.5.7.25.3`,
+> `id-pe-mtcCertificationAuthority-SHA256` = `1.3.6.1.5.5.7.1.38`.
 
 ---
 
@@ -216,7 +225,7 @@ Both use the same experimental-arc OIDs from the draft:
 | sign-subtree API | tlog-witness PR #245 | Not in scope |
 | CA certificate (§5.5) | MTC §5.5 | mtc-demo does not build CA certs |
 | Single-pass entry hash | MTC §7.2 | Optimization; mtc-demo uses step-by-step |
-| Landmark HTTP endpoint | MTC §6.3.3 | mtc-demo has landmark data model only |
+| Landmark HTTP endpoint | MTC §6.4.3 | mtc-demo has landmark data model only |
 | Revoked-range seeding from minSerial | MTC §7.1 | mtc-demo has the data model |
 
 ### 4.2 [SCOPE] Design choices in mtc-demo not in cactus
@@ -257,7 +266,7 @@ cactus's comprehensive `SPEC-REVIEW.md`.
 | Spec ambiguities | 6 | §5 |
 
 The two implementations are **wire-compatible** for the structures they
-both produce (MTCProof, MerkleTreeCertEntry, CosignedMessage, issuer DN,
+both produce (MTCProof, MTCLogEntry, CosignedSubtree, issuer DN,
 TrustAnchorID encoding).  The main blockers to full end-to-end
 interoperability are:
 

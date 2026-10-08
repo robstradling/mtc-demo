@@ -20,15 +20,13 @@ const (
 )
 
 var (
-	// OIDMTCProofExperimental is the experimental OID for id-alg-mtcProof
-	// (1.3.6.1.4.1.44363.47.0).
-	OIDMTCProofExperimental = asn1.ObjectIdentifier{1, 3, 6, 1, 4, 1, 44363, 47, 0}
-	// OIDRDNATrustAnchorIDExperimental is the experimental OID for
-	// id-rdna-trustAnchorID (1.3.6.1.4.1.44363.47.3).
-	OIDRDNATrustAnchorIDExperimental = asn1.ObjectIdentifier{1, 3, 6, 1, 4, 1, 44363, 47, 3}
-	// OIDMTCCertificationAuthoritySHA256Experimental is the experimental OID
-	// for id-pe-mtcCertificationAuthority-SHA256 (1.3.6.1.4.1.44363.47.4).
-	OIDMTCCertificationAuthoritySHA256Experimental = asn1.ObjectIdentifier{1, 3, 6, 1, 4, 1, 44363, 47, 4}
+	// OIDMTCProof is id-alg-mtcProof (1.3.6.1.5.5.7.6.67).
+	OIDMTCProof = asn1.ObjectIdentifier{1, 3, 6, 1, 5, 5, 7, 6, 67}
+	// OIDRDNATrustAnchorID is id-rdna-trustAnchorID (1.3.6.1.5.5.7.25.3).
+	OIDRDNATrustAnchorID = asn1.ObjectIdentifier{1, 3, 6, 1, 5, 5, 7, 25, 3}
+	// OIDMTCCertificationAuthoritySHA256 is
+	// id-pe-mtcCertificationAuthority-SHA256 (1.3.6.1.5.5.7.1.38).
+	OIDMTCCertificationAuthoritySHA256 = asn1.ObjectIdentifier{1, 3, 6, 1, 5, 5, 7, 1, 38}
 )
 
 // MTCLogEntryExtension represents a tag-length-value extension

@@ -192,7 +192,7 @@ func buildDemoTBSCert(caID mtc.TrustAnchorID, cn string, spki []byte, notBefore,
 		})
 		tbs.AddASN1Int64(0)
 		tbs.AddASN1(cbasn1.SEQUENCE, func(alg *cryptobyte.Builder) {
-			alg.AddASN1ObjectIdentifier(mtc.OIDMTCProofExperimental)
+			alg.AddASN1ObjectIdentifier(mtc.OIDMTCProof)
 		})
 		addIssuerDN(tbs, caID)
 		addValidity(tbs, notBefore, notAfter)
@@ -249,7 +249,7 @@ func addIssuerDN(b *cryptobyte.Builder, issuer mtc.TrustAnchorID) {
 	b.AddASN1(cbasn1.SEQUENCE, func(dn *cryptobyte.Builder) {
 		dn.AddASN1(cbasn1.SET, func(rdn *cryptobyte.Builder) {
 			rdn.AddASN1(cbasn1.SEQUENCE, func(attr *cryptobyte.Builder) {
-				attr.AddASN1ObjectIdentifier(mtc.OIDRDNATrustAnchorIDExperimental)
+				attr.AddASN1ObjectIdentifier(mtc.OIDRDNATrustAnchorID)
 				// RELATIVE-OID (universal tag 13) of the trust anchor ID.
 				attr.AddASN1(cbasn1.Tag(13), func(val *cryptobyte.Builder) {
 					val.AddBytes([]byte(issuer))

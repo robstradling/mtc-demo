@@ -1,5 +1,5 @@
 // Package mtc implements Merkle Tree Certificates as specified in
-// draft-ietf-plants-merkle-tree-certs-06.
+// draft-ietf-plants-merkle-tree-certs-07.
 package mtc
 
 import (
@@ -106,9 +106,20 @@ func parseBase128(in []byte) (ret uint64, rest []byte, ok bool) {
 }
 
 // OIDName returns the cosigner_name/log_origin format used in
-// CosignedMessage (Section 5.3.1): "oid/1.3.6.1.4.1." + ASCII representation.
-func (t TrustAnchorID) OIDName() string {
-	return "oid/1.3.6.1.4.1." + t.String()
+// CosignedSubtree (Section 5.3.1): "oid/1.3.6.1.4.1." + ASCII representation.
+// Components are bounded to 64 bits; per Section 5.3.1, signing and
+// verification MUST fail if a component is out of range.
+func (t TrustAnchorID) OIDName() (string, error) {
+	if len(t) == 0 {
+		return "", fmt.Errorf("empty trust anchor ID")
+	}
+	for rest := []byte(t); len(rest) != 0; {
+		var ok bool
+		if _, rest, ok = parseBase128(rest); !ok {
+			return "", fmt.Errorf("trust anchor ID %x has an invalid or out-of-range OID component", []byte(t))
+		}
+	}
+	return "oid/1.3.6.1.4.1." + t.String(), nil
 }
 
 // LogID constructs the log ID for a given CA ID and log number.
