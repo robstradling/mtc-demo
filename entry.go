@@ -22,7 +22,8 @@ const (
 var (
 	// OIDMTCProof is id-alg-mtcProof (1.3.6.1.5.5.7.6.67).
 	OIDMTCProof = asn1.ObjectIdentifier{1, 3, 6, 1, 5, 5, 7, 6, 67}
-	// OIDRDNATrustAnchorID is id-rdna-trustAnchorID (1.3.6.1.5.5.7.25.3).
+	// OIDRDNATrustAnchorID is id-rdna-trustAnchorID (1.3.6.1.5.5.7.25.3),
+	// defined in Section 4.1 of draft-ietf-tls-trust-anchor-ids.
 	OIDRDNATrustAnchorID = asn1.ObjectIdentifier{1, 3, 6, 1, 5, 5, 7, 25, 3}
 	// OIDMTCCertificationAuthoritySHA256 is
 	// id-pe-mtcCertificationAuthority-SHA256 (1.3.6.1.5.5.7.1.38).

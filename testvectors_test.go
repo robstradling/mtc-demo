@@ -17,7 +17,7 @@ func buildTestTree(n int) *MerkleTree {
 }
 
 // TestAppendixC1SubtreeHashes verifies the accumulated test vector from
-// Appendix C.1.1 of draft-ietf-plants-merkle-tree-certs-07.
+// Appendix C.1.1 of draft-ietf-plants-merkle-tree-certs-08.
 func TestAppendixC1SubtreeHashes(t *testing.T) {
 	const maxSize = 130
 	mt := buildTestTree(maxSize)
@@ -45,7 +45,7 @@ func TestAppendixC1SubtreeHashes(t *testing.T) {
 }
 
 // TestAppendixC2SubtreeInclusionProofs verifies the accumulated test vector
-// from Appendix C.1.2 of draft-ietf-plants-merkle-tree-certs-07.
+// from Appendix C.1.2 of draft-ietf-plants-merkle-tree-certs-08.
 func TestAppendixC2SubtreeInclusionProofs(t *testing.T) {
 	const maxSize = 130
 	mt := buildTestTree(maxSize)
@@ -79,7 +79,7 @@ func TestAppendixC2SubtreeInclusionProofs(t *testing.T) {
 }
 
 // TestAppendixC3SubtreeConsistencyProofs verifies the accumulated test vector
-// from Appendix C.1.3 of draft-ietf-plants-merkle-tree-certs-07.
+// from Appendix C.1.3 of draft-ietf-plants-merkle-tree-certs-08.
 func TestAppendixC3SubtreeConsistencyProofs(t *testing.T) {
 	const maxSize = 130
 	h := sha256.New()
@@ -122,7 +122,7 @@ func TestAppendixC3SubtreeConsistencyProofs(t *testing.T) {
 }
 
 // TestAppendixC4EfficientCoveringSubtrees verifies the accumulated test vector
-// from Appendix C.1.4 of draft-ietf-plants-merkle-tree-certs-07.
+// from Appendix C.1.4 of draft-ietf-plants-merkle-tree-certs-08.
 func TestAppendixC4EfficientCoveringSubtrees(t *testing.T) {
 	const maxSize = 130
 	h := sha256.New()
@@ -146,7 +146,7 @@ func TestAppendixC4EfficientCoveringSubtrees(t *testing.T) {
 }
 
 // TestAppendixC2LargeSubtreeValidity verifies the large-tree subtree
-// validity vectors from Appendix C.2.1 of draft-ietf-plants-merkle-tree-certs-07.
+// validity vectors from Appendix C.2.1 of draft-ietf-plants-merkle-tree-certs-08.
 func TestAppendixC2LargeSubtreeValidity(t *testing.T) {
 	valid := []struct{ start, end uint64 }{
 		{0, (1 << 47) + 1},

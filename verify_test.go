@@ -15,7 +15,8 @@ import (
 	cbasn1 "golang.org/x/crypto/cryptobyte/asn1"
 )
 
-// TestIssuerDNEncoding checks the Section 5.1 example: CA ID 32473.1 is
+// TestIssuerDNEncoding checks the example in Section 4.1 of
+// draft-ietf-tls-trust-anchor-ids: CA ID 32473.1 is
 // 1.3.6.1.5.5.7.25.3=#0d0481fd5901.
 func TestIssuerDNEncoding(t *testing.T) {
 	caID, _ := ParseTrustAnchorID("32473.1")

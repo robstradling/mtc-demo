@@ -281,8 +281,8 @@ func addMTCProofAlg(b *cryptobyte.Builder) {
 }
 
 // addIssuerDN adds the issuer distinguished name containing the trust anchor ID.
-// Per Section 5.1, the attribute value is a RELATIVE-OID holding the trust
-// anchor ID's ASN.1 representation.
+// Per Section 4.1 of draft-ietf-tls-trust-anchor-ids, the attribute value
+// is a RELATIVE-OID holding the trust anchor ID's ASN.1 representation.
 func addIssuerDN(b *cryptobyte.Builder, issuer TrustAnchorID) {
 	b.AddASN1(cbasn1.SEQUENCE, func(dn *cryptobyte.Builder) {
 		dn.AddASN1(cbasn1.SET, func(rdn *cryptobyte.Builder) {
