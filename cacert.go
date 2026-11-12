@@ -28,6 +28,8 @@ var (
 	oidECDSAWithSHA384 = asn1.ObjectIdentifier{1, 2, 840, 10045, 4, 3, 3}
 	oidEd25519         = asn1.ObjectIdentifier{1, 3, 101, 112}
 	oidMLDSA44         = asn1.ObjectIdentifier{2, 16, 840, 1, 101, 3, 4, 3, 17}
+	oidMLDSA65         = asn1.ObjectIdentifier{2, 16, 840, 1, 101, 3, 4, 3, 18}
+	oidMLDSA87         = asn1.ObjectIdentifier{2, 16, 840, 1, 101, 3, 4, 3, 19}
 
 	oidExtSubjectKeyID     = asn1.ObjectIdentifier{2, 5, 29, 14}
 	oidExtKeyUsage         = asn1.ObjectIdentifier{2, 5, 29, 15}
@@ -55,6 +57,10 @@ func signatureAlgorithmOID(alg SignatureAlgorithm) (asn1.ObjectIdentifier, error
 		return oidEd25519, nil
 	case SignatureMLDSA44:
 		return oidMLDSA44, nil
+	case SignatureMLDSA65:
+		return oidMLDSA65, nil
+	case SignatureMLDSA87:
+		return oidMLDSA87, nil
 	default:
 		return nil, fmt.Errorf("unsupported signature algorithm: %d", alg)
 	}
@@ -83,15 +89,18 @@ func marshalCosignerSPKI(pub crypto.PublicKey, alg SignatureAlgorithm) ([]byte, 
 			return nil, errors.New("not an Ed25519 public key")
 		}
 		return x509.MarshalPKIXPublicKey(k)
-	case SignatureMLDSA44:
+	case SignatureMLDSA44, SignatureMLDSA65, SignatureMLDSA87:
+		params := mldsaParameters(alg)
 		k, ok := pub.(*mldsa.PublicKey)
-		if !ok || k.Parameters() != mldsa.MLDSA44() {
-			return nil, errors.New("not an ML-DSA-44 public key")
+		if !ok || k.Parameters() != params {
+			return nil, fmt.Errorf("not an %s public key", params)
 		}
+		oid, _ := signatureAlgorithmOID(alg)
+		// RFC 9881 §4: parameters absent, raw public key in the BIT STRING.
 		b := cryptobyte.NewBuilder(nil)
 		b.AddASN1(cbasn1.SEQUENCE, func(spki *cryptobyte.Builder) {
 			spki.AddASN1(cbasn1.SEQUENCE, func(a *cryptobyte.Builder) {
-				a.AddASN1ObjectIdentifier(oidMLDSA44)
+				a.AddASN1ObjectIdentifier(oid)
 			})
 			spki.AddASN1BitString(k.Bytes())
 		})
@@ -99,6 +108,54 @@ func marshalCosignerSPKI(pub crypto.PublicKey, alg SignatureAlgorithm) ([]byte, 
 	default:
 		return nil, fmt.Errorf("unsupported signature algorithm: %d", alg)
 	}
+}
+
+// ParseCosignerPublicKey parses a DER SubjectPublicKeyInfo holding a
+// cosigner public key and returns the key and its signature algorithm.
+// Supported keys are ECDSA P-256 and P-384, Ed25519, and ML-DSA-44, -65
+// and -87; each key type implies a single signature algorithm.
+func ParseCosignerPublicKey(spki []byte) (crypto.PublicKey, SignatureAlgorithm, error) {
+	input := cryptobyte.String(spki)
+	var seq, algSeq cryptobyte.String
+	var oid asn1.ObjectIdentifier
+	if !input.ReadASN1(&seq, cbasn1.SEQUENCE) || !input.Empty() ||
+		!seq.ReadASN1(&algSeq, cbasn1.SEQUENCE) ||
+		!algSeq.ReadASN1ObjectIdentifier(&oid) {
+		return nil, 0, errors.New("malformed SubjectPublicKeyInfo")
+	}
+
+	for _, alg := range []SignatureAlgorithm{SignatureMLDSA44, SignatureMLDSA65, SignatureMLDSA87} {
+		if algOID, _ := signatureAlgorithmOID(alg); !oid.Equal(algOID) {
+			continue
+		}
+		var bits asn1.BitString
+		if !algSeq.Empty() || !seq.ReadASN1BitString(&bits) || !seq.Empty() || bits.BitLength%8 != 0 {
+			return nil, 0, errors.New("malformed ML-DSA SubjectPublicKeyInfo")
+		}
+		pk, err := mldsa.NewPublicKey(mldsaParameters(alg), bits.Bytes)
+		if err != nil {
+			return nil, 0, err
+		}
+		return pk, alg, nil
+	}
+
+	pub, err := x509.ParsePKIXPublicKey(spki)
+	if err != nil {
+		return nil, 0, err
+	}
+	switch k := pub.(type) {
+	case *ecdsa.PublicKey:
+		switch k.Curve {
+		case elliptic.P256():
+			return k, SignatureP256SHA256, nil
+		case elliptic.P384():
+			return k, SignatureP384SHA384, nil
+		}
+		return nil, 0, fmt.Errorf("unsupported ECDSA curve %s", k.Curve.Params().Name)
+	case ed25519.PublicKey:
+		return k, SignatureEd25519, nil
+	}
+	return nil, 0, fmt.Errorf("unsupported public key algorithm %v", oid)
 }
 
 // addCertTime adds a UTCTime for years 1950-2049 and a GeneralizedTime

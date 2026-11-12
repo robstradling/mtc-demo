@@ -7,10 +7,16 @@ import (
 	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/x509"
+	"encoding/asn1"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
+
+	"filippo.io/mldsa"
+	"golang.org/x/crypto/cryptobyte"
+	cbasn1 "golang.org/x/crypto/cryptobyte/asn1"
 
 	"mtc"
 )
@@ -43,7 +49,7 @@ type EntryMeta struct {
 // CosignerKeyConfig stores a cosigner's key material.
 type CosignerKeyConfig struct {
 	ID         string `json:"id"`          // dotted-decimal trust anchor ID
-	Algorithm  string `json:"algorithm"`   // "ed25519", "p256", "p384"
+	Algorithm  string `json:"algorithm"`   // "ed25519", "p256", "p384", "mldsa44", "mldsa65", "mldsa87"
 	PrivateKey string `json:"private_key"` // hex-encoded PKCS8 DER
 }
 
@@ -161,13 +167,9 @@ func rebuildCosignerKey(cfg CosignerKeyConfig) (*mtc.CosignerKey, error) {
 	if err != nil {
 		return nil, fmt.Errorf("decoding private key: %w", err)
 	}
-	priv, err := x509.ParsePKCS8PrivateKey(pkcs8)
+	signer, err := parsePrivateKey(pkcs8)
 	if err != nil {
 		return nil, fmt.Errorf("parsing private key: %w", err)
-	}
-	signer, ok := priv.(crypto.Signer)
-	if !ok {
-		return nil, fmt.Errorf("key does not implement crypto.Signer")
 	}
 	alg, err := parseAlgorithm(cfg.Algorithm)
 	if err != nil {
@@ -197,38 +199,88 @@ func rebuildAllCosignerKeys(s *DemoState) ([]*mtc.CosignerKey, error) {
 func rebuildTrustedCosigners(s *DemoState) ([]mtc.TrustedCosigner, error) {
 	var cosigners []mtc.TrustedCosigner
 	for _, cfg := range s.Cosigners {
-		id, err := mtc.ParseTrustAnchorID(cfg.ID)
+		k, err := rebuildCosignerKey(cfg)
 		if err != nil {
-			return nil, err
-		}
-		pkcs8, err := hex.DecodeString(cfg.PrivateKey)
-		if err != nil {
-			return nil, err
-		}
-		priv, err := x509.ParsePKCS8PrivateKey(pkcs8)
-		if err != nil {
-			return nil, err
-		}
-		alg, err := parseAlgorithm(cfg.Algorithm)
-		if err != nil {
-			return nil, err
-		}
-		var pub crypto.PublicKey
-		switch k := priv.(type) {
-		case ed25519.PrivateKey:
-			pub = k.Public()
-		case *ecdsa.PrivateKey:
-			pub = &k.PublicKey
-		default:
-			return nil, fmt.Errorf("unsupported key type for cosigner %s", cfg.ID)
+			return nil, fmt.Errorf("cosigner %s: %w", cfg.ID, err)
 		}
 		cosigners = append(cosigners, mtc.TrustedCosigner{
-			CosignerID:         id,
-			SignatureAlgorithm: alg,
-			PublicKey:          pub,
+			CosignerID:         k.CosignerID,
+			SignatureAlgorithm: k.SignatureAlgorithm,
+			PublicKey:          k.PrivateKey.Public(),
 		})
 	}
 	return cosigners, nil
+}
+
+// mldsaAlgorithms maps CLI names to ML-DSA parameter sets and their
+// RFC 9881 OIDs; crypto/x509 cannot encode these keys.
+var mldsaAlgorithms = []struct {
+	name   string
+	params *mldsa.Parameters
+	oid    asn1.ObjectIdentifier
+}{
+	{"mldsa44", mldsa.MLDSA44(), asn1.ObjectIdentifier{2, 16, 840, 1, 101, 3, 4, 3, 17}},
+	{"mldsa65", mldsa.MLDSA65(), asn1.ObjectIdentifier{2, 16, 840, 1, 101, 3, 4, 3, 18}},
+	{"mldsa87", mldsa.MLDSA87(), asn1.ObjectIdentifier{2, 16, 840, 1, 101, 3, 4, 3, 19}},
+}
+
+// marshalPrivateKey encodes a private key as PKCS #8. ML-DSA keys use the
+// seed-only form from RFC 9881 §6.
+func marshalPrivateKey(key crypto.Signer) ([]byte, error) {
+	k, ok := key.(*mldsa.PrivateKey)
+	if !ok {
+		return x509.MarshalPKCS8PrivateKey(key)
+	}
+	for _, m := range mldsaAlgorithms {
+		if k.PublicKey().Parameters() != m.params {
+			continue
+		}
+		b := cryptobyte.NewBuilder(nil)
+		b.AddASN1(cbasn1.SEQUENCE, func(pki *cryptobyte.Builder) {
+			pki.AddASN1Int64(0)
+			pki.AddASN1(cbasn1.SEQUENCE, func(a *cryptobyte.Builder) {
+				a.AddASN1ObjectIdentifier(m.oid)
+			})
+			pki.AddASN1(cbasn1.OCTET_STRING, func(pk *cryptobyte.Builder) {
+				pk.AddASN1(cbasn1.Tag(0).ContextSpecific(), func(seed *cryptobyte.Builder) {
+					seed.AddBytes(k.Bytes())
+				})
+			})
+		})
+		return b.Bytes()
+	}
+	return nil, errors.New("unknown ML-DSA parameter set")
+}
+
+// parsePrivateKey decodes a PKCS #8 private key written by marshalPrivateKey.
+func parsePrivateKey(der []byte) (crypto.Signer, error) {
+	in := cryptobyte.String(der)
+	var pki, algSeq cryptobyte.String
+	var version int64
+	var oid asn1.ObjectIdentifier
+	if in.ReadASN1(&pki, cbasn1.SEQUENCE) && pki.ReadASN1Integer(&version) &&
+		pki.ReadASN1(&algSeq, cbasn1.SEQUENCE) && algSeq.ReadASN1ObjectIdentifier(&oid) {
+		for _, m := range mldsaAlgorithms {
+			if !oid.Equal(m.oid) {
+				continue
+			}
+			var privKey, seed cryptobyte.String
+			if !pki.ReadASN1(&privKey, cbasn1.OCTET_STRING) ||
+				!privKey.ReadASN1(&seed, cbasn1.Tag(0).ContextSpecific()) || !privKey.Empty() {
+				return nil, errors.New("unsupported ML-DSA private key encoding (want seed form)")
+			}
+			return mldsa.NewPrivateKey(m.params, seed)
+		}
+	}
+	priv, err := x509.ParsePKCS8PrivateKey(der)
+	if err != nil {
+		return nil, err
+	}
+	signer, ok := priv.(crypto.Signer)
+	if !ok {
+		return nil, errors.New("key does not implement crypto.Signer")
+	}
+	return signer, nil
 }
 
 // parseAlgorithm converts a string algorithm name to SignatureAlgorithm.
@@ -240,10 +292,18 @@ func parseAlgorithm(name string) (mtc.SignatureAlgorithm, error) {
 		return mtc.SignatureP256SHA256, nil
 	case "p384":
 		return mtc.SignatureP384SHA384, nil
+	case "mldsa44":
+		return mtc.SignatureMLDSA44, nil
+	case "mldsa65":
+		return mtc.SignatureMLDSA65, nil
+	case "mldsa87":
+		return mtc.SignatureMLDSA87, nil
 	default:
-		return 0, fmt.Errorf("unknown algorithm %q (use ed25519, p256, or p384)", name)
+		return 0, fmt.Errorf("unknown algorithm %q (use %s)", name, algorithmList)
 	}
 }
+
+const algorithmList = "ed25519, p256, p384, mldsa44, mldsa65, mldsa87"
 
 // algorithmName converts a SignatureAlgorithm to a display name.
 func algorithmName(alg mtc.SignatureAlgorithm) string {
@@ -256,6 +316,10 @@ func algorithmName(alg mtc.SignatureAlgorithm) string {
 		return "p384"
 	case mtc.SignatureMLDSA44:
 		return "mldsa44"
+	case mtc.SignatureMLDSA65:
+		return "mldsa65"
+	case mtc.SignatureMLDSA87:
+		return "mldsa87"
 	default:
 		return fmt.Sprintf("unknown(%d)", alg)
 	}
@@ -272,6 +336,11 @@ func generateCosignerKey(alg string) (crypto.Signer, error) {
 	case "p384":
 		return ecdsa.GenerateKey(elliptic.P384(), rand.Reader)
 	default:
+		for _, m := range mldsaAlgorithms {
+			if m.name == alg {
+				return mldsa.GenerateKey(m.params)
+			}
+		}
 		return nil, fmt.Errorf("unknown algorithm %q", alg)
 	}
 }

@@ -101,17 +101,30 @@ mtc-demo ca add <common-name>            Add a TBS certificate entry to the log
 mtc-demo ca checkpoint                   Display current checkpoint and subtree hashes
 mtc-demo ca issue <index>                Issue a certificate for a log entry
 mtc-demo ca prune <min-index>            Prune entries below min-index
-mtc-demo ca cert                         Generate the MTC CA certificate (ca-cert.pem)
+mtc-demo ca cert [public-key.pem]        Generate the MTC CA certificate (ca-cert.pem)
 ```
 
-`ca cert` requires a CA cosigner, i.e. a cosigner key whose ID equals the
-CA ID. It sets `minSerial` to the first available entry of the current log
+`ca cert` certifies the CA cosigner's public key. By default it uses the
+CA cosigner in the state file, i.e. the cosigner key whose ID equals the CA
+ID. Alternatively, pass a PEM `PUBLIC KEY` file to certify an
+externally-generated key (e.g. one held in an HSM); the signature algorithm
+is inferred from the key type (P-256, P-384, Ed25519, ML-DSA-44/65/87). For
+example:
+
+```sh
+openssl genpkey -algorithm ML-DSA-65 -out ca.key
+openssl pkey -in ca.key -pubout -out ca.pub
+mtc-demo ca cert ca.pub
+```
+
+It sets `minSerial` to the first available entry of the current log
 and `maxSerial` to the last possible entry of the current log.
 
 ### Cosigner Operations
 
 ```
-mtc-demo cosigner keygen <id> <algorithm>   Generate a key pair (ed25519, p256, p384)
+mtc-demo cosigner keygen <id> <algorithm>   Generate a key pair (ed25519, p256, p384,
+                                            mldsa44, mldsa65, mldsa87)
 mtc-demo cosigner list                      List configured cosigner keys
 mtc-demo cosigner sign <id> <start> <end>   Cosign a subtree
 ```
@@ -245,6 +258,9 @@ Supported signature algorithms:
 | `SignatureP256SHA256` | ECDSA with P-256 and SHA-256 |
 | `SignatureP384SHA384` | ECDSA with P-384 and SHA-384 |
 | `SignatureEd25519` | Ed25519 |
+| `SignatureMLDSA44` | ML-DSA-44 (pure, empty context) |
+| `SignatureMLDSA65` | ML-DSA-65 (pure, empty context) |
+| `SignatureMLDSA87` | ML-DSA-87 (pure, empty context) |
 
 ### Creating Certificates
 
@@ -298,6 +314,15 @@ identifier set to the CA ID's binary representation. It is not self-signed:
 as §5.5 recommends, it is an [RFC 9925](https://www.rfc-editor.org/rfc/rfc9925)
 unsigned certificate (`id-alg-unsigned` with an empty signature value) whose
 issuer is the `id-rdna-unsigned` placeholder name.
+
+To certify an externally-generated key, parse its DER SubjectPublicKeyInfo
+with `ParseCosignerPublicKey`, which also returns the matching signature
+algorithm:
+
+```go
+pub, alg, _ := mtc.ParseCosignerPublicKey(spkiDER)
+caCertDER, _ := mtc.CreateCACertificate(caID, pub, alg, minSerial, maxSerial, notBefore, notAfter)
+```
 
 ### Verifying Certificates (Relying Party)
 
@@ -493,3 +518,4 @@ Update the headings in COMPARISON-WITH-CACTUS.md to indicate each item that has 
 - [2026-10-08] Update implementation and documentation to draft-ietf-plants-merkle-tree-certs-07.
 - [2026-11-06] Update implementation and documentation to draft-ietf-plants-merkle-tree-certs-08.
 - [2026-11-12] Add a subcommand to generate an MTC CA Certificate, per https://www.ietf.org/archive/id/draft-ietf-plants-merkle-tree-certs-08.html#section-5.5
+- [2026-11-12] Support ML-DSA key types for "mtc-demo ca cert".  Also allow externally-generated CA public keys to be certified with "mtc-demo ca cert".

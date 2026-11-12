@@ -23,7 +23,24 @@ const (
 	SignatureP384SHA384
 	SignatureEd25519
 	SignatureMLDSA44
+	SignatureMLDSA65
+	SignatureMLDSA87
 )
+
+// mldsaParameters returns the ML-DSA parameter set for alg, or nil if alg
+// is not an ML-DSA algorithm.
+func mldsaParameters(alg SignatureAlgorithm) *mldsa.Parameters {
+	switch alg {
+	case SignatureMLDSA44:
+		return mldsa.MLDSA44()
+	case SignatureMLDSA65:
+		return mldsa.MLDSA65()
+	case SignatureMLDSA87:
+		return mldsa.MLDSA87()
+	default:
+		return nil
+	}
+}
 
 // Cosignature represents a cosignature with cosigner identity.
 type Cosignature struct {
@@ -93,7 +110,7 @@ func Cosign(key *CosignerKey, logID TrustAnchorID, start, end uint64, hash *Hash
 	case SignatureEd25519:
 		signInput = input
 		opts = crypto.Hash(0)
-	case SignatureMLDSA44:
+	case SignatureMLDSA44, SignatureMLDSA65, SignatureMLDSA87:
 		// ML-DSA signs the raw message with empty context (§5.3.3, RFC 9881 §3).
 		signInput = input
 		opts = &mldsa.Options{}
@@ -147,16 +164,17 @@ func VerifyCosignature(cosignerID TrustAnchorID, publicKey crypto.PublicKey, sig
 		if !ed25519.Verify(edKey, input, signature) {
 			return errors.New("Ed25519 signature verification failed")
 		}
-	case SignatureMLDSA44:
+	case SignatureMLDSA44, SignatureMLDSA65, SignatureMLDSA87:
 		pk, ok := publicKey.(*mldsa.PublicKey)
 		if !ok {
 			return errors.New("not an ML-DSA public key")
 		}
-		if pk.Parameters() != mldsa.MLDSA44() {
-			return errors.New("not an ML-DSA-44 key")
+		params := mldsaParameters(sigAlg)
+		if pk.Parameters() != params {
+			return fmt.Errorf("not an %s key", params)
 		}
 		if err := mldsa.Verify(pk, input, signature, &mldsa.Options{}); err != nil {
-			return fmt.Errorf("ML-DSA-44 signature verification failed: %w", err)
+			return fmt.Errorf("%s signature verification failed: %w", params, err)
 		}
 	default:
 		return fmt.Errorf("unsupported signature algorithm: %d", sigAlg)

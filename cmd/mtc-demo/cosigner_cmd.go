@@ -1,7 +1,6 @@
 package main
 
 import (
-	"crypto/x509"
 	"encoding/hex"
 	"fmt"
 	"os"
@@ -15,10 +14,10 @@ func cmdCosigner(args []string) error {
 		fmt.Fprintf(os.Stderr, `Usage: mtc-demo cosigner <subcommand>
 
 Subcommands:
-  keygen <id> <algorithm>   Generate a cosigner key pair (ed25519, p256, p384)
+  keygen <id> <algorithm>   Generate a cosigner key pair (%s)
   list                      List configured cosigner keys
   sign <id> <start> <end>   Cosign a subtree
-`)
+`, algorithmList)
 		return nil
 	}
 
@@ -36,7 +35,7 @@ Subcommands:
 
 func cmdCosignerKeygen(args []string) error {
 	if len(args) != 2 {
-		return fmt.Errorf("usage: mtc-demo cosigner keygen <cosigner-id> <algorithm>\nalgorithms: ed25519, p256, p384")
+		return fmt.Errorf("usage: mtc-demo cosigner keygen <cosigner-id> <algorithm>\nalgorithms: %s", algorithmList)
 	}
 
 	s, err := requireState()
@@ -69,7 +68,7 @@ func cmdCosignerKeygen(args []string) error {
 	if err != nil {
 		return fmt.Errorf("generating key: %w", err)
 	}
-	pkcs8, err := x509.MarshalPKCS8PrivateKey(signer)
+	pkcs8, err := marshalPrivateKey(signer)
 	if err != nil {
 		return fmt.Errorf("marshaling key: %w", err)
 	}

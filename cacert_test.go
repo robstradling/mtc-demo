@@ -7,6 +7,8 @@ import (
 	"crypto/ed25519"
 	"crypto/elliptic"
 	"crypto/rand"
+	"crypto/rsa"
+	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/asn1"
 	"encoding/hex"
@@ -17,27 +19,44 @@ import (
 	"filippo.io/mldsa"
 )
 
-func TestCreateCACertificate(t *testing.T) {
-	caID, _ := ParseTrustAnchorID("32473.1")
+type testCosignerPublicKey struct {
+	name string
+	pub  crypto.PublicKey
+	alg  SignatureAlgorithm
+	oid  asn1.ObjectIdentifier
+}
+
+func testCosignerPublicKeys(t *testing.T) []testCosignerPublicKey {
+	t.Helper()
 	p256, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	p384, _ := ecdsa.GenerateKey(elliptic.P384(), rand.Reader)
 	edPub, _, _ := ed25519.GenerateKey(rand.Reader)
-	mlKey, err := mldsa.GenerateKey(mldsa.MLDSA44())
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	tests := []struct {
-		name string
-		pub  crypto.PublicKey
-		alg  SignatureAlgorithm
-		oid  asn1.ObjectIdentifier
-	}{
+	keys := []testCosignerPublicKey{
 		{"p256", &p256.PublicKey, SignatureP256SHA256, oidECDSAWithSHA256},
 		{"p384", &p384.PublicKey, SignatureP384SHA384, oidECDSAWithSHA384},
 		{"ed25519", edPub, SignatureEd25519, oidEd25519},
-		{"mldsa44", mlKey.PublicKey(), SignatureMLDSA44, oidMLDSA44},
 	}
+	for _, m := range []struct {
+		name string
+		alg  SignatureAlgorithm
+		oid  asn1.ObjectIdentifier
+	}{
+		{"mldsa44", SignatureMLDSA44, oidMLDSA44},
+		{"mldsa65", SignatureMLDSA65, oidMLDSA65},
+		{"mldsa87", SignatureMLDSA87, oidMLDSA87},
+	} {
+		k, err := mldsa.GenerateKey(mldsaParameters(m.alg))
+		if err != nil {
+			t.Fatal(err)
+		}
+		keys = append(keys, testCosignerPublicKey{m.name, k.PublicKey(), m.alg, m.oid})
+	}
+	return keys
+}
+
+func TestCreateCACertificate(t *testing.T) {
+	caID, _ := ParseTrustAnchorID("32473.1")
+	tests := testCosignerPublicKeys(t)
 
 	notBefore := time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC)
 	notAfter := time.Date(2056, 11, 1, 0, 0, 0, 0, time.UTC)
@@ -163,6 +182,56 @@ func TestCreateCACertificateMaxSerial(t *testing.T) {
 	// INTEGER 2^64-1 needs a leading zero octet.
 	if !bytes.Contains(der, []byte{0x02, 0x09, 0x00, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff}) {
 		t.Error("maxSerial 2^64-1 not encoded as a positive 9-octet INTEGER")
+	}
+}
+
+func TestParseCosignerPublicKey(t *testing.T) {
+	for _, tc := range testCosignerPublicKeys(t) {
+		spki, err := marshalCosignerSPKI(tc.pub, tc.alg)
+		if err != nil {
+			t.Fatalf("%s: %v", tc.name, err)
+		}
+		pub, alg, err := ParseCosignerPublicKey(spki)
+		if err != nil {
+			t.Fatalf("%s: %v", tc.name, err)
+		}
+		if alg != tc.alg || !pub.(interface{ Equal(crypto.PublicKey) bool }).Equal(tc.pub) {
+			t.Errorf("%s: round trip gave algorithm %d, key %v", tc.name, alg, pub)
+		}
+	}
+}
+
+func TestParseCosignerPublicKeyRejects(t *testing.T) {
+	rsaKey, _ := rsa.GenerateKey(rand.Reader, 2048)
+	p521, _ := ecdsa.GenerateKey(elliptic.P521(), rand.Reader)
+	mlKey, _ := mldsa.GenerateKey(mldsa.MLDSA44())
+	mlSPKI, _ := marshalCosignerSPKI(mlKey.PublicKey(), SignatureMLDSA44)
+
+	rsaSPKI, _ := x509.MarshalPKIXPublicKey(&rsaKey.PublicKey)
+	p521SPKI, _ := x509.MarshalPKIXPublicKey(&p521.PublicKey)
+	// ML-DSA SPKI with NULL parameters, which RFC 9881 forbids.
+	withParams, _ := asn1.Marshal(struct {
+		Alg pkix.AlgorithmIdentifier
+		Key asn1.BitString
+	}{
+		pkix.AlgorithmIdentifier{Algorithm: oidMLDSA44, Parameters: asn1.NullRawValue},
+		asn1.BitString{Bytes: mlKey.PublicKey().Bytes(), BitLength: 8 * len(mlKey.PublicKey().Bytes())},
+	})
+	// ML-DSA-44 key bytes labelled as ML-DSA-65.
+	wrongParams := bytes.Replace(mlSPKI, []byte{0x03, 0x04, 0x03, 0x11}, []byte{0x03, 0x04, 0x03, 0x12}, 1)
+
+	cases := map[string][]byte{
+		"rsa":             rsaSPKI,
+		"p521":            p521SPKI,
+		"mldsa params":    withParams,
+		"mldsa wrong set": wrongParams,
+		"trailing data":   append(append([]byte{}, mlSPKI...), 0),
+		"empty":           nil,
+	}
+	for name, spki := range cases {
+		if _, _, err := ParseCosignerPublicKey(spki); err == nil {
+			t.Errorf("%s: expected error", name)
+		}
 	}
 }
 
