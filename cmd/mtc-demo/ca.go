@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
@@ -28,7 +29,7 @@ Subcommands:
   checkpoint                  Display current checkpoint hash
   issue <index>               Issue a certificate for a log entry
   prune <min-index>           Prune entries below min-index
-  cert                        Generate the MTC CA certificate (§5.5)
+  cert [public-key.pem]       Generate the MTC CA certificate (§5.5)
 `)
 		return nil
 	}
@@ -367,8 +368,8 @@ func cmdCAPrune(args []string) error {
 }
 
 func cmdCACert(args []string) error {
-	if len(args) != 0 {
-		return fmt.Errorf("usage: mtc-demo ca cert")
+	if len(args) > 1 {
+		return fmt.Errorf("usage: mtc-demo ca cert [public-key.pem]")
 	}
 
 	s, err := requireState()
@@ -380,20 +381,44 @@ func cmdCACert(args []string) error {
 		return err
 	}
 
-	// The CA cosigner's ID is the CA ID (§5.4).
-	var keyCfg *CosignerKeyConfig
-	for i := range s.Cosigners {
-		if s.Cosigners[i].ID == s.CAID {
-			keyCfg = &s.Cosigners[i]
-			break
+	var (
+		pub       crypto.PublicKey
+		alg       mtc.SignatureAlgorithm
+		keySource string
+	)
+	if len(args) == 1 {
+		// Externally-generated CA cosigner key, e.g. held in an HSM.
+		data, err := os.ReadFile(args[0])
+		if err != nil {
+			return err
 		}
-	}
-	if keyCfg == nil {
-		return fmt.Errorf("no CA cosigner; run 'mtc-demo cosigner keygen %s <algorithm>' first", s.CAID)
-	}
-	key, err := rebuildCosignerKey(*keyCfg)
-	if err != nil {
-		return err
+		block, _ := pem.Decode(data)
+		if block == nil || block.Type != "PUBLIC KEY" {
+			return fmt.Errorf("%s: expected a PEM \"PUBLIC KEY\" block", args[0])
+		}
+		pub, alg, err = mtc.ParseCosignerPublicKey(block.Bytes)
+		if err != nil {
+			return fmt.Errorf("%s: %w", args[0], err)
+		}
+		keySource = args[0]
+	} else {
+		// The CA cosigner's ID is the CA ID (§5.4).
+		var keyCfg *CosignerKeyConfig
+		for i := range s.Cosigners {
+			if s.Cosigners[i].ID == s.CAID {
+				keyCfg = &s.Cosigners[i]
+				break
+			}
+		}
+		if keyCfg == nil {
+			return fmt.Errorf("no CA cosigner; run 'mtc-demo cosigner keygen %s <algorithm>' first, or pass a public key file", s.CAID)
+		}
+		key, err := rebuildCosignerKey(*keyCfg)
+		if err != nil {
+			return err
+		}
+		pub, alg = key.PrivateKey.Public(), key.SignatureAlgorithm
+		keySource = "cosigner " + keyCfg.ID
 	}
 
 	// Revoke serials below the first available entry (§7.5) and above the
@@ -405,7 +430,7 @@ func cmdCACert(args []string) error {
 	notBefore := time.Now().Truncate(time.Second)
 	notAfter := notBefore.Add(365 * 24 * time.Hour)
 
-	certDER, err := mtc.CreateCACertificate(caID, key.PrivateKey.Public(), key.SignatureAlgorithm,
+	certDER, err := mtc.CreateCACertificate(caID, pub, alg,
 		minSerial, maxSerial, notBefore, notAfter)
 	if err != nil {
 		return fmt.Errorf("creating CA certificate: %w", err)
@@ -418,7 +443,7 @@ func cmdCACert(args []string) error {
 
 	fmt.Printf("CA certificate generated:\n")
 	fmt.Printf("  Subject:    %s (CA ID)\n", caID)
-	fmt.Printf("  Cosigner:   %s (%s)\n", keyCfg.ID, keyCfg.Algorithm)
+	fmt.Printf("  Public key: %s (%s)\n", keySource, algorithmName(alg))
 	fmt.Printf("  Min serial: 0x%x\n", minSerial)
 	fmt.Printf("  Max serial: 0x%x\n", maxSerial)
 	fmt.Printf("  Not after:  %s\n", notAfter.UTC().Format(time.RFC3339))

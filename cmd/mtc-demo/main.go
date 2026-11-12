@@ -54,10 +54,11 @@ CA operations:
   ca checkpoint                        Display current checkpoint hash
   ca issue <index>                     Issue a certificate for a log entry
   ca prune <min-index>                 Prune entries below min-index
-  ca cert                              Generate the MTC CA certificate (§5.5)
+  ca cert [public-key.pem]             Generate the MTC CA certificate (§5.5)
 
 Cosigner operations:
-  cosigner keygen <id> <algorithm>     Generate a cosigner key pair (ed25519, p256, p384)
+  cosigner keygen <id> <algorithm>     Generate a cosigner key pair (ed25519, p256, p384,
+                                       mldsa44, mldsa65, mldsa87)
   cosigner list                        List configured cosigner keys
   cosigner sign <id> <start> <end>     Cosign a subtree
 
