@@ -28,6 +28,7 @@ Subcommands:
   checkpoint                  Display current checkpoint hash
   issue <index>               Issue a certificate for a log entry
   prune <min-index>           Prune entries below min-index
+  cert                        Generate the MTC CA certificate (§5.5)
 `)
 		return nil
 	}
@@ -45,6 +46,8 @@ Subcommands:
 		return cmdCAIssue(args[1:])
 	case "prune":
 		return cmdCAPrune(args[1:])
+	case "cert":
+		return cmdCACert(args[1:])
 	default:
 		return fmt.Errorf("unknown ca subcommand: %s", args[0])
 	}
@@ -360,5 +363,66 @@ func cmdCAPrune(args []string) error {
 
 	fmt.Printf("Pruned to min index %d\n", minIdx)
 	fmt.Printf("Log size: %d\n", log.Size())
+	return nil
+}
+
+func cmdCACert(args []string) error {
+	if len(args) != 0 {
+		return fmt.Errorf("usage: mtc-demo ca cert")
+	}
+
+	s, err := requireState()
+	if err != nil {
+		return err
+	}
+	caID, err := mtc.ParseTrustAnchorID(s.CAID)
+	if err != nil {
+		return err
+	}
+
+	// The CA cosigner's ID is the CA ID (§5.4).
+	var keyCfg *CosignerKeyConfig
+	for i := range s.Cosigners {
+		if s.Cosigners[i].ID == s.CAID {
+			keyCfg = &s.Cosigners[i]
+			break
+		}
+	}
+	if keyCfg == nil {
+		return fmt.Errorf("no CA cosigner; run 'mtc-demo cosigner keygen %s <algorithm>' first", s.CAID)
+	}
+	key, err := rebuildCosignerKey(*keyCfg)
+	if err != nil {
+		return err
+	}
+
+	// Revoke serials below the first available entry (§7.5) and above the
+	// current log (§12.2.2).
+	logBase := uint64(s.LogNumber) << 48
+	minSerial := logBase | uint64(s.MinIndex)
+	maxSerial := logBase | (1<<48 - 1)
+
+	notBefore := time.Now().Truncate(time.Second)
+	notAfter := notBefore.Add(365 * 24 * time.Hour)
+
+	certDER, err := mtc.CreateCACertificate(caID, key.PrivateKey.Public(), key.SignatureAlgorithm,
+		minSerial, maxSerial, notBefore, notAfter)
+	if err != nil {
+		return fmt.Errorf("creating CA certificate: %w", err)
+	}
+
+	certFile := "ca-cert.pem"
+	if err := os.WriteFile(certFile, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: certDER}), 0644); err != nil {
+		return err
+	}
+
+	fmt.Printf("CA certificate generated:\n")
+	fmt.Printf("  Subject:    %s (CA ID)\n", caID)
+	fmt.Printf("  Cosigner:   %s (%s)\n", keyCfg.ID, keyCfg.Algorithm)
+	fmt.Printf("  Min serial: 0x%x\n", minSerial)
+	fmt.Printf("  Max serial: 0x%x\n", maxSerial)
+	fmt.Printf("  Not after:  %s\n", notAfter.UTC().Format(time.RFC3339))
+	fmt.Printf("  Size:       %d bytes\n", len(certDER))
+	fmt.Printf("  File:       %s\n", certFile)
 	return nil
 }

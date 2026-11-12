@@ -71,8 +71,12 @@ State is persisted in `./mtc-state.json` (override with `MTC_STATE` env var).
 mtc-demo ca init 32473.1 1
 
 # Generate cosigner keys
+mtc-demo cosigner keygen 32473.1 p256      # CA cosigner (ID = CA ID, §5.4)
 mtc-demo cosigner keygen 32473.100 ed25519
 mtc-demo cosigner keygen 32473.200 p256
+
+# Generate the CA certificate (§5.5)
+mtc-demo ca cert
 
 # Add certificate entries
 mtc-demo ca add example.com
@@ -97,7 +101,12 @@ mtc-demo ca add <common-name>            Add a TBS certificate entry to the log
 mtc-demo ca checkpoint                   Display current checkpoint and subtree hashes
 mtc-demo ca issue <index>                Issue a certificate for a log entry
 mtc-demo ca prune <min-index>            Prune entries below min-index
+mtc-demo ca cert                         Generate the MTC CA certificate (ca-cert.pem)
 ```
+
+`ca cert` requires a CA cosigner, i.e. a cosigner key whose ID equals the
+CA ID. It sets `minSerial` to the first available entry of the current log
+and `maxSerial` to the last possible entry of the current log.
 
 ### Cosigner Operations
 
@@ -152,6 +161,7 @@ mtc-demo tree [entries...]             Build a Merkle tree and show info
 | `cert.go` | §6.2 | `MTCProof` and X.509 certificate construction |
 | `verify.go` | §7.1–§7.5 | Relying party verification |
 | `log.go` | §5 | `IssuanceLog` management |
+| `cacert.go` | §5.5 | MTC CA certificate construction |
 | `landmark.go` | §6.4 | `LandmarkSequence` for size-optimized certificates |
 | `cmd/mtc-demo/` | — | CLI tool for operating MTC ecosystem roles |
 
@@ -262,6 +272,32 @@ The certificate is a standard DER-encoded X.509 Certificate where:
 An `MTCProof` may also carry GREASE cosignatures (§6.2): entries with an
 unused cosigner ID and arbitrary signature bytes. Relying parties ignore
 unrecognized cosigners, so these never affect verification.
+
+### Creating a CA Certificate
+
+The X.509 representation of a Merkle Tree CA (§5.5) carries the CA ID as
+its subject, the CA cosigner's public key, and a critical
+`id-pe-mtcCertificationAuthority-SHA256` extension holding the cosigner's
+signature algorithm and the allowed serial number range:
+
+```go
+minSerial := uint64(logNumber) << 48             // >= mtc.MTCMinSerial
+maxSerial := uint64(logNumber)<<48 | (1<<48 - 1) // <= mtc.MTCMaxSerial
+caCertDER, _ := mtc.CreateCACertificate(
+    caID,                       // subject
+    &caCosignerKey.PublicKey,   // CA cosigner public key
+    mtc.SignatureP256SHA256,    // CA cosigner signature algorithm
+    minSerial, maxSerial,
+    notBefore, notAfter,
+)
+```
+
+The certificate also includes critical basic constraints (`cA` TRUE), a
+critical key usage extension asserting `keyCertSign`, and a subject key
+identifier set to the CA ID's binary representation. It is not self-signed:
+as §5.5 recommends, it is an [RFC 9925](https://www.rfc-editor.org/rfc/rfc9925)
+unsigned certificate (`id-alg-unsigned` with an empty signature value) whose
+issuer is the `id-rdna-unsigned` placeholder name.
 
 ### Verifying Certificates (Relying Party)
 
@@ -402,7 +438,7 @@ draft-ietf-plants-merkle-tree-certs-08, which has the same wire format
 as draft-07:
 
 - **§4** Subtrees — definition, inclusion proofs, consistency proofs, interval covering (empty subtrees are valid; the covering function always returns two subtrees)
-- **§5** Issuance Logs — log structure, entries (`MTCLogEntry`), cosigners (`CosignedSubtree`), CA cosigners
+- **§5** Issuance Logs — log structure, entries (`MTCLogEntry`), cosigners (`CosignedSubtree`), CA cosigners, CA certificates (§5.5)
 - **§6** Certificates — certificate format (including GREASE cosignatures), standalone certificates, landmark-relative certificates (landmarks carry a tree size and expiration time)
 - **§7** Relying Parties — trust anchors, signature verification, cosigner policies, trusted subtrees, revocation
 - **Appendix C** Test Vectors — accumulated subtree test vectors (C.1) and large-tree subtree validity vectors (C.2)
@@ -436,6 +472,7 @@ See LICENSE file.
 
 - [draft-ietf-plants-merkle-tree-certs-08](https://www.ietf.org/archive/id/draft-ietf-plants-merkle-tree-certs-08.txt)
 - [RFC 9162 — Certificate Transparency v2](https://www.rfc-editor.org/rfc/rfc9162)
+- [RFC 9925 — Unsigned X.509 Certificates](https://www.rfc-editor.org/rfc/rfc9925)
 - [draft-ietf-tls-trust-anchor-ids](https://datatracker.ietf.org/doc/draft-ietf-tls-trust-anchor-ids/)
 - [Merkle Tree Certificates with Tiled Transparency Logs (MTC-TLOG)](https://c2sp.org/mtc-tlog@v0.1.0)
 - [GitHub: ietf-plants-wg/merkle-tree-certs](https://github.com/ietf-plants-wg/merkle-tree-certs)
@@ -455,3 +492,4 @@ Update the headings in COMPARISON-WITH-CACTUS.md to indicate each item that has 
 - [2026-09-21] Update implementation and documentation to draft-ietf-plants-merkle-tree-certs-06.
 - [2026-10-08] Update implementation and documentation to draft-ietf-plants-merkle-tree-certs-07.
 - [2026-11-06] Update implementation and documentation to draft-ietf-plants-merkle-tree-certs-08.
+- [2026-11-12] Add a subcommand to generate an MTC CA Certificate, per https://www.ietf.org/archive/id/draft-ietf-plants-merkle-tree-certs-08.html#section-5.5
