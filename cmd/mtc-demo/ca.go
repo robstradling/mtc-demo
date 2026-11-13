@@ -367,6 +367,10 @@ func cmdCAPrune(args []string) error {
 	return nil
 }
 
+// maxCALogNumber is the highest issuance log number covered by a CA
+// certificate; Chrome's CQRP trusts only logs 1-5 per CA cosigner key.
+const maxCALogNumber = 5
+
 func cmdCACert(args []string) error {
 	if len(args) > 1 {
 		return fmt.Errorf("usage: mtc-demo ca cert [public-key.pem]")
@@ -422,10 +426,12 @@ func cmdCACert(args []string) error {
 	}
 
 	// Revoke serials below the first available entry (§7.5) and above the
-	// current log (§12.2.2).
-	logBase := uint64(s.LogNumber) << 48
-	minSerial := logBase | uint64(s.MinIndex)
-	maxSerial := logBase | (1<<48 - 1)
+	// last log this CA certificate may cover (§12.2.2).
+	if s.LogNumber > maxCALogNumber {
+		return fmt.Errorf("current log number %d exceeds %d, the maximum trusted for a CA cosigner key; certify a new CA cosigner key", s.LogNumber, maxCALogNumber)
+	}
+	minSerial := uint64(s.LogNumber)<<48 | uint64(s.MinIndex)
+	maxSerial := uint64(maxCALogNumber)<<48 | (1<<48 - 1)
 
 	notBefore := time.Now().Truncate(time.Second)
 	notAfter := notBefore.Add(365 * 24 * time.Hour)
@@ -444,8 +450,8 @@ func cmdCACert(args []string) error {
 	fmt.Printf("CA certificate generated:\n")
 	fmt.Printf("  Subject:    %s (CA ID)\n", caID)
 	fmt.Printf("  Public key: %s (%s)\n", keySource, algorithmName(alg))
-	fmt.Printf("  Min serial: 0x%x\n", minSerial)
-	fmt.Printf("  Max serial: 0x%x\n", maxSerial)
+	fmt.Printf("  Min serial: 0x%x (log %d, index %d)\n", minSerial, s.LogNumber, s.MinIndex)
+	fmt.Printf("  Max serial: 0x%x (log %d)\n", maxSerial, maxCALogNumber)
 	fmt.Printf("  Not after:  %s\n", notAfter.UTC().Format(time.RFC3339))
 	fmt.Printf("  Size:       %d bytes\n", len(certDER))
 	fmt.Printf("  File:       %s\n", certFile)
