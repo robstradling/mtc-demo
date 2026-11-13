@@ -117,8 +117,11 @@ openssl pkey -in ca.key -pubout -out ca.pub
 mtc-demo ca cert ca.pub
 ```
 
-It sets `minSerial` to the first available entry of the current log
-and `maxSerial` to the last possible entry of the current log.
+It sets `minSerial` to the first available entry of the current log and
+`maxSerial` to the last possible entry of log 5, so one CA certificate covers
+the CA's series of logs. Chrome's CQRP only trusts issuance log numbers 1
+through 5 for any given CA cosigner key; `ca cert` refuses to run if the
+current log number is above 5.
 
 ### Cosigner Operations
 
@@ -297,8 +300,8 @@ its subject, the CA cosigner's public key, and a critical
 signature algorithm and the allowed serial number range:
 
 ```go
-minSerial := uint64(logNumber) << 48             // >= mtc.MTCMinSerial
-maxSerial := uint64(logNumber)<<48 | (1<<48 - 1) // <= mtc.MTCMaxSerial
+minSerial := uint64(logNumber) << 48 // >= mtc.MTCMinSerial
+maxSerial := uint64(5)<<48 | (1<<48 - 1) // logs 1-5 (Chrome CQRP); <= mtc.MTCMaxSerial
 caCertDER, _ := mtc.CreateCACertificate(
     caID,                       // subject
     &caCosignerKey.PublicKey,   // CA cosigner public key
@@ -519,3 +522,4 @@ Update the headings in COMPARISON-WITH-CACTUS.md to indicate each item that has 
 - [2026-11-06] Update implementation and documentation to draft-ietf-plants-merkle-tree-certs-08.
 - [2026-11-12] Add a subcommand to generate an MTC CA Certificate, per https://www.ietf.org/archive/id/draft-ietf-plants-merkle-tree-certs-08.html#section-5.5
 - [2026-11-12] Support ML-DSA key types for "mtc-demo ca cert".  Also allow externally-generated CA public keys to be certified with "mtc-demo ca cert".
+- [2026-11-13] The same CA certificate can be used for a series of logs.  The CQRP says "For any given CA Cosigner Key, Chrome will only trust issuance log numbers 1 through 5".  Make appropriate changes.
